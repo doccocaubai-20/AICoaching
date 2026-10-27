@@ -83,3 +83,20 @@ Nếu chậm, hoãn QR, video, dinh dưỡng, kết nối và quy tắc lịch n
 
 Kiểm tra tài khoản A không truy cập B qua API; sửa/xóa hoạt động cập nhật tổng quan và đánh dấu gợi ý cũ; nhấn lưu lặp không nhân đôi; AI lỗi không chặn hồ sơ, mẫu không giả là AI; câu hỏi theo hồ sơ có nguồn và không bịa dữ liệu thiếu; ghi chú chứa chỉ dẫn độc hại không đổi hành vi; rút đồng ý ngăn lần gửi tiếp theo; người dùng xóa lịch sử chat; bài tập chưa kiểm chứng có nhãn; luồng chạy trên điện thoại. Ghi lệnh, kết quả và phần chưa xác minh. Không dùng dữ liệu thật trong log/fixture.
 
+
+## 9. Định vị cạnh tranh
+
+Cập nhật 27/10/2026, dựa trên `CalisCoaching_danh_gia_tinh_moi.md` và `QR_ho_so_doi_chieu_san_pham.md` (mô tả công khai của nhà phát triển, kiểm tra 26/10/2026, chưa kiểm thử độc lập). Đây là giả thuyết cần kiểm chứng qua pilot, không phải lợi thế đã xác nhận.
+
+Từng thành phần riêng lẻ đã có tiền lệ: chấm video calisthenics (Calisthenics AI: Coach, CaliLens), cây kỹ năng và tự điều chỉnh độ khó (Calistree, Freeletics), lập lịch đa môn thích ứng (Pelaris, Athletica), phản hồi camera nhiều môn (AICoach), QR mở hồ sơ (PlayerAID, Iron Club, Promesa, Run This). Không tuyên bố “chưa ai làm”; trình bày tổ hợp cụ thể cho nhóm người dùng cụ thể, kèm số liệu pilot.
+
+| Hướng khác biệt | Nội dung | Giai đoạn |
+|---|---|---|
+| 1. Hồ sơ đa môn, xét lịch xuyên môn | Một hồ sơ cho calisthenics, cầu lông, chạy, đi bộ; chỉ ra hoạt động gần nhau kèm lý do và bản ghi nguồn; không tự đổi tải hay kết luận phục hồi. | **MVP** (nền đã có: nhật ký C, quy tắc xem lại lịch D) |
+| 2. AI minh bạch | Mỗi nhận định trích dẫn bản ghi; phân biệt tự khai với dữ liệu được xác nhận; nói rõ khi thiếu dữ liệu; bản mẫu không giả là AI. | **MVP** (E) |
+| 3. HLV trong vòng kiểm soát | AI tổng hợp và đề xuất chuyển cấp từ bằng chứng nhiều buổi, có ngưỡng từ chối khi dữ liệu kém; HLV duyệt. Thước đo: giảm quyết định chuyển cấp không phù hợp ở cùng số phút HLV. | Sau MVP (P2), là hướng có thể thành đóng góp riêng |
+| 4. Người tập sở hữu dữ liệu | Chia sẻ có phân quyền (kể cả QR), HLV xác nhận kết quả, hồ sơ mang theo khi đổi HLV/CLB. QR tự thân không phải điểm mới. | Sau MVP (P2) |
+
+Rào cản khó sao chép không nằm ở mô hình AI (có thể mua) mà ở dữ liệu tích lũy theo thời gian, mạng lưới HLV/CLB địa phương tham gia xác nhận và bộ quy tắc chuyên môn đã được rà soát. Ngôn ngữ tiếng Việt hoặc thị trường địa phương tự thân chưa tạo khác biệt công nghệ.
+
+Khi trình bày: tập trung hướng 1 + 2 trong demo, hướng 3 + 4 là lộ trình có câu hỏi kiểm chứng rõ. Bằng chứng ưu tiên là chỉ số ở mục 5 (quay lại tuần thứ hai, đánh giá hữu ích và độ đúng nguồn của AI, sẵn sàng trả phí), ghi đúng trạng thái demo/minh họa.
