@@ -87,7 +87,14 @@ export default async function DashboardPage() {
       .eq('is_planned', false)
       .gte('start_at', sevenDaysAgo.toISOString())
       .lte('start_at', now.toISOString()),
-    supabase.from('ai_summaries').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase
+      .from('ai_summaries')
+      .select('*')
+      .eq('user_id', user.id)
+      .or('input_scope->>kind.is.null,input_scope->>kind.neq.analysis')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const displayName =

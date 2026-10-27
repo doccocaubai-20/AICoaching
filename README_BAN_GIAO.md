@@ -9,6 +9,8 @@
 - `BAN_GIAO_A_SANG_D.md`: dữ liệu buổi tập minh họa, ghi kết quả chống trùng, quy tắc xem lại lịch và prompt giao agent D.
 - `BAN_GIAO_D.md`: báo cáo của agent D (buổi tập minh họa, quy tắc xem lại lịch).
 - `BAN_GIAO_A_SANG_E.md`: quyền bảng AI, đồng ý, nhà cung cấp/model, an toàn prompt và prompt giao agent E.
+- `BAN_GIAO_E.md`: báo cáo của agent E (tương tác AI, tóm tắt, hỏi đáp, phân tích xu hướng, khắc phục sau rà soát).
+- `BAN_GIAO_F.md`: báo cáo của agent F (tích hợp toàn diện, nghiệm thu rà soát E, kiểm định smoke test và kiểm thử end-to-end).
 - `AI_Coaching_de_xuat_y_tuong.md`: đề xuất ý tưởng trước đó; có thể còn nội dung về HLV ở giai đoạn đầu, cần cập nhật nếu sử dụng theo định hướng mới.
 - `QR_ho_so_doi_chieu_san_pham.md`: đối chiếu sản phẩm có hồ sơ và QR.
 - Các báo cáo cũ cung cấp bối cảnh; phạm vi và ưu tiên MVP hiện hành theo PLAN_MVP.md.

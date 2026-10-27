@@ -1,30 +1,173 @@
 import React from 'react';
-import {
-  BotMessageSquare,
-  Sparkles,
-  ShieldCheck,
-  Send,
-  AlertCircle,
-  FileText,
-  Info,
-  CheckCircle2,
-  Trash2,
-} from 'lucide-react';
+import { BotMessageSquare, Sparkles } from 'lucide-react';
 import { getSupabaseEnvStatus } from '@/lib/supabase/env';
+import { getAuthenticatedUser } from '@/lib/server/auth-guard';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { CredentialStatusBanner } from '@/components/ui/CredentialStatusBanner';
+import { AIManager } from '@/components/ai/AIManager';
+import { getAIEnvConfig } from '@/lib/ai/env';
+import {
+  AIConsentEntity,
+  AISummaryEntity,
+  AIConversationEntity,
+  AIMessageEntity,
+} from '@/contracts';
 
-export default function AIPage() {
+export const metadata = {
+  title: 'Trợ lý AI | CalisCoaching',
+  description: 'Tóm tắt quá trình rèn luyện và hỏi đáp theo nhật ký có trích dẫn nguồn minh bạch',
+};
+
+export default async function AIPage() {
   const envStatus = getSupabaseEnvStatus();
 
-  return (
-    <div className="p-4 space-y-5">
-      {!envStatus.isConfigured && (
+  if (!envStatus.isConfigured) {
+    return (
+      <div className="p-4 space-y-4">
         <CredentialStatusBanner
           isConfigured={envStatus.isConfigured}
           missingKeys={envStatus.missingKeys}
         />
-      )}
+        <div className="p-8 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+          <p className="text-xs text-slate-500">
+            Hệ thống cơ sở dữ liệu Supabase chưa được cấu hình. Vui lòng thiết lập biến môi trường để
+            sử dụng tính năng AI.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
+  const { user } = await getAuthenticatedUser();
+
+  if (!user) {
+    return (
+      <div className="p-4 space-y-4">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <BotMessageSquare className="w-5 h-5 text-purple-600" />
+            <span>Trợ lý AI theo hồ sơ</span>
+          </h1>
+          <p className="text-xs text-slate-500">
+            Tóm tắt quá trình và hỏi đáp dựa trên dữ liệu nhật ký có trích dẫn nguồn
+          </p>
+        </div>
+
+        <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-center space-y-3">
+          <p className="text-xs text-slate-600 dark:text-slate-400">
+            Vui lòng đăng nhập để kích hoạt trợ lý AI và xem phân tích nhật ký của bạn.
+          </p>
+          <a
+            href="/login"
+            className="inline-block px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-colors"
+          >
+            Đăng nhập ngay
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  const supabase = await createServerSupabaseClient();
+  let consent: AIConsentEntity | null = null;
+  let latestSummary: AISummaryEntity | null = null;
+  let latestTrend: AISummaryEntity | null = null;
+  let activeConversation: AIConversationEntity | null = null;
+  let messages: AIMessageEntity[] = [];
+  let latestActivityAt: string | null = null;
+  let loadError: string | null = null;
+
+  if (supabase) {
+    // 1. Lấy trạng thái Consent
+    const consentRes = await supabase
+      .from('ai_consents')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    consent = consentRes.data as unknown as AIConsentEntity | null;
+
+    // 2. Lấy riêng bản tóm tắt hồ sơ và bản phân tích xu hướng mới nhất
+    const [summaryRes, trendRes] = await Promise.all([
+      supabase
+        .from('ai_summaries')
+        .select('*')
+        .eq('user_id', user.id)
+        .or('input_scope->>kind.is.null,input_scope->>kind.neq.analysis')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('ai_summaries')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('input_scope->>kind', 'analysis')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    latestSummary = summaryRes.data as unknown as AISummaryEntity | null;
+    latestTrend = trendRes.data as unknown as AISummaryEntity | null;
+
+    // 3. Lấy thời điểm hoạt động mới nhất
+    const actRes = await supabase
+      .from('activities')
+      .select('created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (actRes.data?.created_at) {
+      latestActivityAt = actRes.data.created_at;
+    }
+
+    // 4. Lấy cuộc trò chuyện gần nhất và tin nhắn
+    const convRes = await supabase
+      .from('ai_conversations')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    activeConversation = convRes.data as unknown as AIConversationEntity | null;
+
+    let msgError = false;
+    if (activeConversation) {
+      const msgRes = await supabase
+        .from('ai_messages')
+        .select('*')
+        .eq('conversation_id', activeConversation.id)
+        .order('created_at', { ascending: true });
+
+      if (msgRes.error) {
+        msgError = true;
+      } else {
+        messages = (msgRes.data || []) as unknown as AIMessageEntity[];
+      }
+    }
+
+    if (
+      consentRes.error ||
+      summaryRes.error ||
+      trendRes.error ||
+      actRes.error ||
+      convRes.error ||
+      msgError
+    ) {
+      loadError = 'Không thể tải toàn bộ dữ liệu AI từ máy chủ. Vui lòng thử tải lại trang.';
+    }
+  }
+
+  const aiConfig = getAIEnvConfig();
+  const providerLabel =
+    aiConfig.provider === 'google'
+      ? `Google Gemini (${aiConfig.modelName})`
+      : 'Google Gemini (Chưa thiết lập khóa)';
+
+  return (
+    <div className="p-4 space-y-4">
       <div>
         <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
           <BotMessageSquare className="w-5 h-5 text-purple-600" />
@@ -35,113 +178,17 @@ export default function AIPage() {
         </p>
       </div>
 
-      <div className="p-3 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/60 rounded-xl text-purple-900 dark:text-purple-200 text-xs flex items-start gap-2">
-        <Info className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-        <div>
-          <span className="font-semibold">Phụ trách bởi Agent E:</span>
-          <p className="text-[11px] text-purple-800/80 dark:text-purple-300/80 mt-0.5">
-            Xây dựng adapter gọi AI thật từ Server qua biến môi trường bí mật; cơ chế xin đồng ý/rút đồng ý; tóm tắt & hỏi đáp có trích dẫn nguồn; kích hoạt fallback mẫu có nhãn &ldquo;Không dùng AI&rdquo; khi lỗi hoặc thiếu khóa.
-          </p>
-        </div>
-      </div>
-
-      {/* Trạng thái đồng ý chia sẻ dữ liệu */}
-      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Đồng ý chia sẻ dữ liệu với AI</span>
-          </div>
-          <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded font-medium">
-            Chưa kích hoạt
-          </span>
-        </div>
-
-        <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-          Theo chính sách bảo mật MVP, AI chỉ nhận các trường dữ liệu tối thiểu (mục tiêu, thời lượng tập, mức mệt) mà bạn đồng ý. Bạn có quyền xem/xóa lịch sử và rút lại đồng ý bất cứ lúc nào để lập tức ngăn chặn các lần gửi sau.
-        </p>
-
-        <button
-          disabled
-          className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 font-medium text-xs rounded-lg cursor-not-allowed"
-        >
-          Đồng ý chia sẻ dữ liệu (Sẽ tích hợp ở Agent E)
-        </button>
-      </section>
-
-      {/* Tác vụ 1: Tóm tắt hồ sơ */}
-      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-            <FileText className="w-4 h-4 text-purple-600" />
-            <span>Tóm tắt hồ sơ vận động</span>
-          </div>
-        </div>
-
-        <p className="text-[11px] text-slate-500 leading-relaxed">
-          Tạo ảnh chụp tóm tắt các hoạt động trong tuần, nêu rõ khoảng thời gian, nguồn dữ liệu và thừa nhận các dữ liệu còn thiếu (ví dụ: chưa có cân nặng).
-        </p>
-
-        <button
-          disabled
-          className="w-full py-2 bg-purple-600/50 text-white font-medium text-xs rounded-lg cursor-not-allowed flex items-center justify-center gap-1.5"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Tạo bản tóm tắt hồ sơ</span>
-        </button>
-      </section>
-
-      {/* Tác vụ 2: Hỏi đáp theo hồ sơ */}
-      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-            <BotMessageSquare className="w-4 h-4 text-purple-600" />
-            <span>Hỏi đáp theo dữ liệu hồ sơ</span>
-          </div>
-          <button
-            disabled
-            className="text-[11px] text-slate-400 flex items-center gap-1 cursor-not-allowed"
-            title="Xóa lịch sử chat"
-          >
-            <Trash2 className="w-3 h-3" />
-            <span>Xóa lịch sử</span>
-          </button>
-        </div>
-
-        {/* Khung chat mẫu */}
-        <div className="min-h-[140px] bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3 border border-slate-100 dark:border-slate-800 flex flex-col justify-center items-center text-center text-slate-400 text-xs">
-          <BotMessageSquare className="w-8 h-8 text-slate-300 dark:text-slate-700 mb-1" />
-          <p className="font-medium text-slate-600 dark:text-slate-300">
-            Đặt câu hỏi tiếng Việt về nhật ký của bạn
-          </p>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            Ví dụ: &ldquo;Tuần này tôi đã ghi những hoạt động nào?&rdquo;
-          </p>
-        </div>
-
-        {/* Ô nhập câu hỏi */}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            disabled
-            placeholder="Nhập câu hỏi theo hồ sơ..."
-            className="flex-1 px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-400 cursor-not-allowed"
-          />
-          <button
-            disabled
-            className="px-3 py-2 bg-slate-200 dark:bg-slate-800 text-slate-400 rounded-lg cursor-not-allowed"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
-      </section>
-
-      {/* Ranh giới an toàn AI */}
-      <div className="p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] text-slate-500 space-y-1">
-        <p className="font-semibold text-slate-700 dark:text-slate-300">Quy tắc bảo vệ an toàn AI:</p>
-        <p>• AI chỉ sử dụng dữ liệu được phép; không tự ý chẩn đoán y tế hoặc thay đổi kế hoạch tập.</p>
-        <p>• Khi thiếu dữ liệu hoặc không có khóa API, hệ thống kích hoạt phản hồi mẫu có nhãn &ldquo;Không dùng AI&rdquo;.</p>
-      </div>
+      <AIManager
+        consent={consent}
+        latestSummary={latestSummary}
+        latestTrend={latestTrend}
+        activeConversation={activeConversation}
+        messages={messages}
+        latestActivityAt={latestActivityAt}
+        providerName={providerLabel}
+        isAIConfigured={aiConfig.isConfigured}
+        loadError={loadError}
+      />
     </div>
   );
 }
