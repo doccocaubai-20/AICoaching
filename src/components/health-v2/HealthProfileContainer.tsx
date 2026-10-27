@@ -33,6 +33,7 @@ import { MedicalTab } from './MedicalTab';
 import { EventsAndDocumentsTab } from './EventsAndDocumentsTab';
 import { ProfileEditForm } from '@/components/profile/ProfileEditForm';
 import { GoalsManager } from '@/components/profile/GoalsManager';
+import { DEFAULT_APP_TIMEZONE } from '@/lib/date-utils';
 
 export interface HealthProfileContainerProps {
   userDisplayName: string;
@@ -215,7 +216,11 @@ export function HealthProfileContainer({
         )}
 
         {activeTab === 'checkin' && (
-          <DailyCheckinTab dailyCheckins={dailyCheckins} activities={activities} />
+          <DailyCheckinTab
+            dailyCheckins={dailyCheckins}
+            activities={activities}
+            timezone={healthProfile?.timezone || DEFAULT_APP_TIMEZONE}
+          />
         )}
 
         {activeTab === 'medical' && (

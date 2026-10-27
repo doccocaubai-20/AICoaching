@@ -811,12 +811,18 @@ describe('Agent E: AI Interaction, Safety & Postgres RLS Suite', () => {
       expect(filteredObs).toHaveLength(1);
       expect(filteredObs[0].content).toBe('Mục tiêu của tôi là gì?');
 
+      const healthReferences = [
+        { id: 'm3', role: 'assistant', content: 'Synthetic sleep summary.', status: 'completed', reference_sources: [{ type: 'checkin', id: 'ck-1' }] },
+        { id: 'm4', role: 'assistant', content: 'Synthetic pressure summary.', status: 'completed', reference_sources: [{ type: 'blood_pressure', id: 'bp-1' }] },
+      ];
+      expect(buildConversationHistory(healthReferences, undefined, ['goals'])).toHaveLength(0);
+
       // 2. Scope rỗng: trả về mảng rỗng
       const emptyScopeRes = buildConversationHistory(historyWithWeight, undefined, []);
       expect(emptyScopeRes).toHaveLength(0);
     });
 
-    it('S3: AIConsentBanner công bố đầy đủ 4 danh mục dữ liệu, cảnh báo nội dung tự nhập và dẫn chứng Google Terms', () => {
+    it('S3: AIConsentBanner công bố đủ 6 nhóm dữ liệu, lịch sử hội thoại và điều kiện provider', () => {
       const bannerTree = AIConsentBanner({
         consent: null,
         providerName: 'Google Gemini 2.5 Flash',
@@ -833,10 +839,13 @@ describe('Agent E: AI Interaction, Safety & Postgres RLS Suite', () => {
       const renderedText = extractText(bannerTree);
       expect(renderedText).toContain('Google Gemini 2.5 Flash');
       expect(renderedText).toContain('Lưu ý về nội dung tự nhập');
-      expect(renderedText).toContain('Hồ sơ & mục tiêu');
-      expect(renderedText).toContain('Hoạt động rèn luyện');
-      expect(renderedText).toContain('Chỉ số quan sát thể chất');
-      expect(renderedText).toContain('Hỏi đáp & hội thoại');
+      expect(renderedText).toContain('Hồ sơ tập luyện');
+      expect(renderedText).toContain('Mục tiêu');
+      expect(renderedText).toContain('Hoạt động');
+      expect(renderedText).toContain('Số đo cơ thể');
+      expect(renderedText).toContain('Sinh hoạt và giấc ngủ');
+      expect(renderedText).toContain('Huyết áp');
+      expect(renderedText).toContain('lịch sử hội thoại');
       expect(renderedText).toContain('Paid Tier');
     });
 

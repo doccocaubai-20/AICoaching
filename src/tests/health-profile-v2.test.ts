@@ -9,7 +9,7 @@
  *    - Tình trạng sức khỏe (Phân biệt bệnh khai chẩn đoán, chấn thương, triệu chứng).
  *    - Dị ứng (Tác nhân, phản ứng, trạng thái đã biết vs chưa biết/chưa khai).
  *    - Thuốc (Tên, hướng dẫn dùng nguyên văn, trạng thái đang dùng vs đã ngừng).
- *    - Sự kiện y tế & Tài liệu khám (Kiểm tra kích thước <= 10MB, định dạng PDF/JPG/PNG).
+ *    - Sự kiện y tế & Tài liệu khám (Kiểm tra kích thước <= 4 MiB, định dạng PDF/JPG/PNG).
  *    - Chỉ số vòng eo (waist_circumference).
  * 2. Postgres RLS, Constraints & Triggers qua PGlite:
  *    - Cô lập dữ liệu tuyệt đối giữa User A và User B trên tất cả 8 bảng mới.
@@ -238,7 +238,7 @@ describe('Hồ Sơ Sức Khỏe Cá Nhân V2 Suite', () => {
       expect(med.is_valid).toBe(true);
     });
 
-    it('1.6. validateHealthDocumentInput: kiểm tra tệp tối đa 10MB và đúng định dạng MIME', () => {
+    it('1.6. validateHealthDocumentInput: kiểm tra tệp tối đa 4 MiB và đúng định dạng MIME', () => {
       const validDoc = validateHealthDocumentInput({
         title: 'Kết quả xét nghiệm máu',
         file_name: 'xet_nghiem.pdf',
@@ -252,7 +252,7 @@ describe('Hồ Sơ Sức Khỏe Cá Nhân V2 Suite', () => {
         title: 'Video nội soi',
         file_name: 'video.mp4',
         file_type: 'application/pdf',
-        file_size_bytes: MAX_DOCUMENT_SIZE_BYTES + 100, // Quá 10MB
+        file_size_bytes: MAX_DOCUMENT_SIZE_BYTES + 100, // Quá 4 MiB
         storage_path: 'health-docs/video.mp4',
       });
       expect(tooLargeDoc.is_valid).toBe(false);
@@ -381,7 +381,7 @@ describe('Hồ Sơ Sức Khỏe Cá Nhân V2 Suite', () => {
       });
     });
 
-    it('2.5. health_events & health_documents: Liên kết sự kiện và cô lập tài liệu', async () => {
+    it('2.5. health_events & health_documents: giữ chỗ qua RPC và cô lập tài liệu', async () => {
       let eventId = '';
       await as(actorUserA, async (tx) => {
         const evRes = await tx.query<{ id: string }>(`
@@ -390,11 +390,19 @@ describe('Hồ Sơ Sức Khỏe Cá Nhân V2 Suite', () => {
           RETURNING id;
         `);
         eventId = evRes.rows[0].id;
+      });
+      await expect(as(actorUserA, async (tx) => tx.query(`
+        INSERT INTO health_documents (user_id, event_id, title, file_name, file_type, file_size_bytes, storage_path)
+        VALUES ('${USER_A}', '${eventId}', 'Bỏ qua quota', 'sieu_am.pdf', 'application/pdf', 1048576, '${USER_A}/sieu_am.pdf')
+        RETURNING *;
+      `))).rejects.toThrow(/row-level security/);
 
+      await as(actorUserA, async (tx) => {
         const docRes = await tx.query(`
-          INSERT INTO health_documents (user_id, event_id, title, file_name, file_type, file_size_bytes, storage_path)
-          VALUES ('${USER_A}', '${eventId}', 'Phiếu siêu âm tim', 'sieu_am.pdf', 'application/pdf', 1048576, 'docs/user-a/sieu_am.pdf')
-          RETURNING *;
+          SELECT reserve_health_document_upload(
+            '${eventId}', 'Phiếu siêu âm tim', 'sieu_am.pdf', 'application/pdf', 1048576,
+            '${USER_A}/sieu_am.pdf', NULL
+          ) AS id;
         `);
         expect(docRes.rows).toHaveLength(1);
       });
@@ -407,7 +415,7 @@ describe('Hồ Sơ Sức Khỏe Cá Nhân V2 Suite', () => {
         expect(doc.rows).toHaveLength(0);
       });
 
-      // Xóa sự kiện -> Tài liệu vẫn tồn tại nhưng event_id chuyển thành NULL (ON DELETE SET NULL)
+      // Xóa sự kiện -> Metadata đang chờ vẫn tồn tại nhưng event_id chuyển thành NULL (ON DELETE SET NULL)
       await as(actorUserA, async (tx) => {
         await tx.query(`DELETE FROM health_events WHERE id = '${eventId}';`);
         const docRes = await tx.query<{ event_id: string | null }>(`

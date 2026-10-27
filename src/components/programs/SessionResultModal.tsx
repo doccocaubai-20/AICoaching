@@ -67,8 +67,8 @@ export function SessionResultModal({
     setExerciseInputs(
       parsed.map((ex) => ({
         exercise_name: ex.name,
-        actual_sets: String(ex.sets),
-        actual_reps: ex.target_reps,
+        actual_sets: '',
+        actual_reps: '',
       }))
     );
   }, [isOpen, session]);
@@ -195,7 +195,7 @@ export function SessionResultModal({
                 Kết quả thực tế từng động tác (Tùy chọn)
               </label>
               <p className="text-[10px] text-slate-400 leading-normal">
-                Động tác nào không thực hiện, vui lòng bỏ trống hoặc xóa số (hệ thống sẽ bỏ qua, không ghi nhận là 0).
+                Chỉ nhập số hiệp và số lần bạn thực hiện thực tế. Để trống nếu không muốn ghi nhận; hệ thống không tự chép mục tiêu thành kết quả.
               </p>
 
               <div className="space-y-2 pt-1">

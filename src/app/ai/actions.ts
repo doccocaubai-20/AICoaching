@@ -38,6 +38,12 @@ import {
   AITrendOutput,
 } from '@/lib/ai/trend-analysis';
 import { buildConversationHistory } from '@/lib/ai/history';
+import {
+  DEFAULT_APP_TIMEZONE,
+  getLocalDateStartInstant,
+  getLocalDateString,
+  getPastLocalDateString,
+} from '@/lib/date-utils';
 
 const VALID_CONSENT_SCOPES: ConsentScopeItem[] = [
   'profile',
@@ -47,6 +53,33 @@ const VALID_CONSENT_SCOPES: ConsentScopeItem[] = [
   'daily_checkins',
   'blood_pressures',
 ];
+const DEFAULT_CONSENT_SCOPES: ConsentScopeItem[] = ['profile', 'goals', 'activities', 'observations'];
+
+type ServerSupabaseClient = NonNullable<Awaited<ReturnType<typeof createServerSupabaseClient>>>;
+
+async function getLocalDateWindow(
+  supabase: ServerSupabaseClient,
+  userId: string,
+  days: number
+): Promise<{ from: string; to: string; localDateFrom: string; localDateTo: string } | null> {
+  const { data: healthProfile, error } = await supabase
+    .from('health_profiles')
+    .select('timezone')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) return null;
+
+  const now = new Date();
+  const timezone = healthProfile?.timezone || DEFAULT_APP_TIMEZONE;
+  const localDateTo = getLocalDateString(now, timezone);
+  const localDateFrom = getPastLocalDateString(Math.max(0, days - 1), now, timezone);
+  return {
+    from: getLocalDateStartInstant(localDateFrom, timezone).toISOString(),
+    to: now.toISOString(),
+    localDateFrom,
+    localDateTo,
+  };
+}
 
 /**
  * Kiểm tra trạng thái đồng ý chia sẻ dữ liệu của người dùng và trả về scope đã đồng ý.
@@ -91,7 +124,10 @@ export async function grantConsentAction(
       return { success: false, error: 'Chưa cấu hình Supabase credentials' };
     }
 
-    const defaultScope = scope && scope.length > 0 ? scope : VALID_CONSENT_SCOPES;
+    const defaultScope = scope === undefined ? DEFAULT_CONSENT_SCOPES : [...new Set(scope)];
+    if (defaultScope.length === 0) {
+      return { success: false, error: 'Hãy chọn ít nhất một phạm vi dữ liệu trước khi cấp quyền.' };
+    }
 
     // Kiểm tra từng phần tử scope thuộc VALID_CONSENT_SCOPES
     for (const s of defaultScope) {
@@ -211,10 +247,11 @@ export async function generateAISummaryAction(): Promise<{
     }
 
     // 2. Thu thập dữ liệu rèn luyện 7 ngày gần nhất (chặn cả cận trên dateTo để loại hoạt động tương lai)
-    const dateTo = new Date().toISOString();
-    const dateFrom = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+    const dateWindow = await getLocalDateWindow(supabase, user.id, 7);
+    if (!dateWindow) return { success: false, error: 'Không tải được múi giờ hồ sơ, thử lại sau' };
+    const { from: dateFrom, to: dateTo, localDateFrom, localDateTo } = dateWindow;
 
-    const [profileRes, goalsRes, activitiesRes, obsRes, reviewsRes] = await Promise.all([
+    const [profileRes, goalsRes, activitiesRes, obsRes, reviewsRes, checkinsRes, bloodPressuresRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle(),
       supabase.from('goals').select('*').eq('user_id', user.id),
       supabase
@@ -232,6 +269,24 @@ export async function generateAISummaryAction(): Promise<{
         .lte('observed_at', dateTo)
         .order('observed_at', { ascending: false }),
       supabase.from('review_suggestions').select('*').eq('user_id', user.id),
+      scope.includes('daily_checkins')
+        ? supabase
+            .from('daily_checkins')
+            .select('*')
+            .eq('user_id', user.id)
+            .gte('local_date', localDateFrom)
+            .lte('local_date', localDateTo)
+            .order('local_date', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      scope.includes('blood_pressures')
+        ? supabase
+            .from('blood_pressure_readings')
+            .select('*')
+            .eq('user_id', user.id)
+            .gte('measured_at', dateFrom)
+            .lte('measured_at', dateTo)
+            .order('measured_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     // BẮT BUỘC: Kiểm tra lỗi tải dữ liệu của từng truy vấn
@@ -240,7 +295,9 @@ export async function generateAISummaryAction(): Promise<{
       goalsRes.error ||
       activitiesRes.error ||
       obsRes.error ||
-      reviewsRes.error
+      reviewsRes.error ||
+      checkinsRes.error ||
+      bloodPressuresRes.error
     ) {
       return { success: false, error: 'Không tải được dữ liệu hồ sơ, thử lại sau' };
     }
@@ -252,7 +309,9 @@ export async function generateAISummaryAction(): Promise<{
       activities: activitiesRes.data || [],
       observations: obsRes.data || [],
       reviewSuggestions: reviewsRes.data || [],
-      dateWindow: { from: dateFrom, to: dateTo },
+      dailyCheckins: checkinsRes.data || [],
+      bloodPressures: bloodPressuresRes.data || [],
+      dateWindow: { from: dateFrom, to: dateTo, localDateFrom, localDateTo },
       scope,
     });
 
@@ -418,7 +477,7 @@ export async function askAIQuestionAction(
     // Sắp xếp giảm dần, limit(6), rồi đảo lại theo thời gian
     const { data: rawHistory, error: historyErr } = await supabase
       .from('ai_messages')
-      .select('id, role, content, status')
+      .select('id, role, content, status, reference_sources')
       .eq('conversation_id', activeConversationId)
       .eq('status', 'completed')
       .order('created_at', { ascending: false })
@@ -454,10 +513,13 @@ export async function askAIQuestionAction(
     }
 
     // 5. Thu thập dữ liệu rèn luyện để dựng context (kiểm tra lỗi từng truy vấn, chặn cả cận trên dateTo)
-    const dateTo = new Date().toISOString();
-    const dateFrom = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+    const dateWindow = await getLocalDateWindow(supabase, user.id, 14);
+    if (!dateWindow) {
+      return { success: false, conversationId: activeConversationId, error: 'Không tải được múi giờ hồ sơ, thử lại sau' };
+    }
+    const { from: dateFrom, to: dateTo, localDateFrom, localDateTo } = dateWindow;
 
-    const [profileRes, goalsRes, activitiesRes, obsRes, reviewsRes] = await Promise.all([
+    const [profileRes, goalsRes, activitiesRes, obsRes, reviewsRes, checkinsRes, bloodPressuresRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle(),
       supabase.from('goals').select('*').eq('user_id', user.id),
       supabase
@@ -475,6 +537,24 @@ export async function askAIQuestionAction(
         .lte('observed_at', dateTo)
         .order('observed_at', { ascending: false }),
       supabase.from('review_suggestions').select('*').eq('user_id', user.id),
+      scope.includes('daily_checkins')
+        ? supabase
+            .from('daily_checkins')
+            .select('*')
+            .eq('user_id', user.id)
+            .gte('local_date', localDateFrom)
+            .lte('local_date', localDateTo)
+            .order('local_date', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      scope.includes('blood_pressures')
+        ? supabase
+            .from('blood_pressure_readings')
+            .select('*')
+            .eq('user_id', user.id)
+            .gte('measured_at', dateFrom)
+            .lte('measured_at', dateTo)
+            .order('measured_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (
@@ -482,7 +562,9 @@ export async function askAIQuestionAction(
       goalsRes.error ||
       activitiesRes.error ||
       obsRes.error ||
-      reviewsRes.error
+      reviewsRes.error ||
+      checkinsRes.error ||
+      bloodPressuresRes.error
     ) {
       return {
         success: false,
@@ -497,7 +579,9 @@ export async function askAIQuestionAction(
       activities: activitiesRes.data || [],
       observations: obsRes.data || [],
       reviewSuggestions: reviewsRes.data || [],
-      dateWindow: { from: dateFrom, to: dateTo },
+      dailyCheckins: checkinsRes.data || [],
+      bloodPressures: bloodPressuresRes.data || [],
+      dateWindow: { from: dateFrom, to: dateTo, localDateFrom, localDateTo },
       scope,
     });
 

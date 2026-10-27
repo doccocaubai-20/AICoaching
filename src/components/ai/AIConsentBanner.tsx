@@ -7,7 +7,7 @@
 
 import React, { useState, useTransition } from 'react';
 import { ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
-import { AIConsentEntity, CURRENT_CONSENT_VERSION } from '@/contracts';
+import { AIConsentEntity, CURRENT_CONSENT_VERSION, ConsentScopeItem } from '@/contracts';
 import { grantConsentAction, revokeConsentAction } from '@/app/ai/actions';
 import { formatDateVN } from '@/components/dashboard/date-utils';
 
@@ -16,9 +16,26 @@ interface AIConsentBannerProps {
   providerName: string;
 }
 
+const CONSENT_SCOPE_OPTIONS: Array<{ key: ConsentScopeItem; label: string; description: string }> = [
+  { key: 'profile', label: 'Hồ sơ tập luyện', description: 'Cấp độ, dụng cụ và lịch tập.' },
+  { key: 'goals', label: 'Mục tiêu', description: 'Mục tiêu rèn luyện bạn đã lưu.' },
+  { key: 'activities', label: 'Hoạt động', description: 'Buổi tập, thời lượng, mức mệt và ghi chú.' },
+  { key: 'observations', label: 'Số đo cơ thể', description: 'Chiều cao, cân nặng và số đo bạn ghi lại.' },
+  { key: 'daily_checkins', label: 'Sinh hoạt và giấc ngủ', description: 'Thời lượng/chất lượng ngủ, năng lượng và stress.' },
+  { key: 'blood_pressures', label: 'Huyết áp', description: 'Các lần đo huyết áp đã lưu.' },
+];
+
+const DEFAULT_CONSENT_SCOPES: ConsentScopeItem[] = ['profile', 'goals', 'activities', 'observations'];
+
 export function AIConsentBanner({ consent, providerName }: AIConsentBannerProps) {
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [selectedScopes, setSelectedScopes] = useState<ConsentScopeItem[]>(() => {
+    const savedScopes = (consent?.scope || []).filter((scope): scope is ConsentScopeItem =>
+      CONSENT_SCOPE_OPTIONS.some((option) => option.key === scope)
+    );
+    return savedScopes.length ? savedScopes : [...DEFAULT_CONSENT_SCOPES];
+  });
 
   const isGranted = Boolean(
     consent?.is_granted && !consent?.revoked_at && consent?.consent_version === CURRENT_CONSENT_VERSION
@@ -26,8 +43,12 @@ export function AIConsentBanner({ consent, providerName }: AIConsentBannerProps)
 
   const handleGrant = () => {
     setErrorMsg(null);
+    if (selectedScopes.length === 0) {
+      setErrorMsg('Hãy chọn ít nhất một phạm vi dữ liệu.');
+      return;
+    }
     startTransition(async () => {
-      const res = await grantConsentAction();
+      const res = await grantConsentAction(selectedScopes);
       if (!res.success) {
         setErrorMsg(res.error || 'Không thể cấp quyền đồng ý');
       }
@@ -80,12 +101,28 @@ export function AIConsentBanner({ consent, providerName }: AIConsentBannerProps)
           <span className="font-semibold text-slate-800 dark:text-slate-200">{providerName}</span>)
           chỉ nhận các thông tin rèn luyện trong phạm vi được bạn đồng ý:
         </p>
-        <ul className="list-disc pl-4 space-y-1 text-[10.5px]">
-          <li><strong>Hồ sơ & mục tiêu:</strong> Lịch tập ưu tiên, dụng cụ hiện có, mục tiêu rèn luyện đang kích hoạt.</li>
-          <li><strong>Hoạt động rèn luyện:</strong> Môn tập, thời lượng, mức mệt, thời điểm thực hiện và ghi chú buổi tập do bạn tự nhập.</li>
-          <li><strong>Chỉ số quan sát thể chất:</strong> Số đo chiều cao và cân nặng bạn tự ghi nhận theo thời gian.</li>
-          <li><strong>Hỏi đáp & hội thoại:</strong> Câu hỏi của bạn và lịch sử trao đổi đa lượt trong phiên hỏi đáp.</li>
-        </ul>
+        <div className="space-y-1.5">
+          <p className="font-semibold">Chọn dữ liệu hồ sơ AI được phép dùng:</p>
+          {CONSENT_SCOPE_OPTIONS.map((option) => (
+            <label key={option.key} className="flex items-start gap-2 rounded-lg border border-slate-200 dark:border-slate-700 p-2">
+              <input
+                type="checkbox"
+                checked={selectedScopes.includes(option.key)}
+                disabled={isGranted || isPending}
+                onChange={(event) => {
+                  setSelectedScopes((current) => event.target.checked
+                    ? [...new Set([...current, option.key])]
+                    : current.filter((scope) => scope !== option.key));
+                }}
+                className="mt-0.5 accent-purple-600"
+              />
+              <span><strong>{option.label}:</strong> {option.description}</span>
+            </label>
+          ))}
+          <p className="text-[10px] text-slate-500">
+            Câu hỏi bạn gửi và lịch sử hội thoại cũng được gửi để AI trả lời theo ngữ cảnh. Bạn có thể rút quyền bất cứ lúc nào.
+          </p>
+        </div>
         <div className="p-2 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-900/40 rounded-lg text-[10px] text-amber-800 dark:text-amber-300">
           <strong>Lưu ý về nội dung tự nhập:</strong> Câu hỏi và ghi chú tự do sẽ được gửi nguyên văn đến nhà cung cấp AI. Vui lòng không nhập họ tên thật, email, số điện thoại, mật khẩu hay thông tin bệnh án nhạy cảm vào các ô nhập liệu.
         </div>

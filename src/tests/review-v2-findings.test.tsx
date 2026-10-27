@@ -79,7 +79,7 @@ function getLiveProps() {
 }
 function finishedModal(onFinishWorkout: any, onClose: any) {
   state.hookIndex = 0;
-  state.overrides = { 0: 'finished', 4: 600 };
+  state.overrides = { 0: 'finished', 4: 600, 11: ['5'] };
   const tree = LiveWorkoutModal({ session, onFinishWorkout, onClose });
   return find(tree, node => node.type === 'button' && node.props.disabled !== undefined);
 }

@@ -41,8 +41,74 @@ export function getPastLocalDateString(
   baseDate: Date = new Date(),
   timezone: string = DEFAULT_APP_TIMEZONE
 ): string {
-  const target = new Date(baseDate.getTime() - daysAgo * 24 * 60 * 60 * 1000);
-  return getLocalDateString(target, timezone);
+  const [year, month, day] = getLocalDateString(baseDate, timezone).split('-').map(Number);
+  const offset = Number.isFinite(daysAgo) ? Math.trunc(daysAgo) : 0;
+  const target = new Date(Date.UTC(year, month - 1, day - offset));
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${target.getUTCFullYear()}-${pad(target.getUTCMonth() + 1)}-${pad(target.getUTCDate())}`;
+}
+
+/** Convert a local calendar date to its UTC start instant for database timestamp filters. */
+export function getLocalDateStartInstant(
+  localDate: string,
+  timezone: string = DEFAULT_APP_TIMEZONE
+): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);
+  if (!match) return new Date(NaN);
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  if (calendarDate.getUTCFullYear() !== year || calendarDate.getUTCMonth() + 1 !== month || calendarDate.getUTCDate() !== day) {
+    return new Date(NaN);
+  }
+
+  const desiredLocalAsUtc = Date.UTC(year, month - 1, day);
+  let instant = desiredLocalAsUtc;
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone || DEFAULT_APP_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+  } catch {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: DEFAULT_APP_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+  }
+
+  // Reconcile UTC and local wall-clock components; this handles offsets and DST transitions.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const parts = formatter.formatToParts(new Date(instant));
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const representedLocalAsUtc = Date.UTC(
+      Number(values.year),
+      Number(values.month) - 1,
+      Number(values.day),
+      Number(values.hour),
+      Number(values.minute),
+      Number(values.second)
+    );
+    const adjustment = desiredLocalAsUtc - representedLocalAsUtc;
+    if (adjustment === 0) break;
+    instant += adjustment;
+  }
+
+  return new Date(instant);
 }
 
 /**

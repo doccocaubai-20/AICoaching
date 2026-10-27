@@ -12,6 +12,7 @@ import { DashboardMetricsSection } from '@/components/dashboard/DashboardMetrics
 import { DashboardActivitiesSection } from '@/components/dashboard/DashboardActivitiesSection';
 import { DashboardAISummaryCard } from '@/components/dashboard/DashboardAISummaryCard';
 import { QuickCheckinWidget } from '@/components/health/QuickCheckinWidget';
+import { DEFAULT_APP_TIMEZONE, getLocalDateStartInstant, getLocalDateString, getPastLocalDateString } from '@/lib/date-utils';
 import {
   GoalEntity,
   ObservationEntity,
@@ -71,11 +72,15 @@ export default async function DashboardPage() {
     redirect('/login');
   }
 
-  // Chuẩn bị mốc 7 ngày cho thống kê và ngày hôm nay (UTC+7)
+  const { data: healthProfile } = await supabase
+    .from('health_profiles')
+    .select('timezone')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  const userTimezone = healthProfile?.timezone || DEFAULT_APP_TIMEZONE;
   const now = new Date();
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const nowVN = new Date(Date.now() + 7 * 60 * 60 * 1000);
-  const todayDateStr = nowVN.toISOString().slice(0, 10);
+  const sevenDaysAgo = getLocalDateStartInstant(getPastLocalDateString(6, now, userTimezone), userTimezone);
+  const todayDateStr = getLocalDateString(now, userTimezone);
 
   // 3. Tải song song dữ liệu từ database qua RLS
   // Tách riêng truy vấn thống kê 7 ngày: is_planned = false, start_at trong 7 ngày gần nhất, không giới hạn số dòng.

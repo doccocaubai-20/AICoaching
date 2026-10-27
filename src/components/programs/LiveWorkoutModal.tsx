@@ -70,6 +70,9 @@ export function LiveWorkoutModal({
   // Kết quả sau buổi tập
   const [exertion, setExertion] = useState(7);
   const [finishNotes, setFinishNotes] = useState('');
+  const [actualRepsByExercise, setActualRepsByExercise] = useState<string[]>(() =>
+    exercises.map(() => '')
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -167,21 +170,20 @@ export function LiveWorkoutModal({
   };
 
   const handleSaveWorkout = async () => {
+    if (actualRepsByExercise.some((reps) => !reps.trim())) {
+      setSaveError('Vui lòng nhập số lần thực hiện thực tế cho từng bài tập.');
+      return;
+    }
+
     setIsSubmitting(true);
     setSaveError(null);
     try {
       const durationMin = Math.max(1, Math.round(totalSeconds / 60));
-      // [E9] Không lưu nguyên dải mục tiêu (ví dụ "8–12") thành actual_reps; trích xuất số reps đơn cụ thể
-      const completedList = exercises.map((ex) => {
-        let repsVal = '10';
-        if (ex.target_reps) {
-          const match = String(ex.target_reps).match(/\d+/);
-          if (match) repsVal = match[0];
-        }
+      const completedList = exercises.map((ex, index) => {
         return {
           exercise_name: ex.name,
           actual_sets: ex.sets,
-          actual_reps: (ex as any).actual_reps || repsVal,
+          actual_reps: actualRepsByExercise[index].trim(),
         };
       });
 
@@ -409,6 +411,34 @@ export function LiveWorkoutModal({
                   onChange={(e) => setExertion(parseInt(e.target.value, 10))}
                   className="w-full mt-2 accent-amber-400 cursor-pointer"
                 />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-2">
+                  Số lần thực hiện thực tế cho từng bài (có thể ghi từng hiệp, ví dụ 8, 7, 6):
+                </label>
+                <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                  {exercises.map((exercise, index) => (
+                    <div key={`${exercise.name}-${index}`} className="flex items-center gap-2">
+                      <span className="text-[11px] text-slate-300 flex-1 text-left">
+                        {exercise.name} <span className="text-slate-500">(mục tiêu {exercise.target_reps})</span>
+                      </span>
+                      <input
+                        type="text"
+                        required
+                        value={actualRepsByExercise[index] || ''}
+                        onChange={(event) => {
+                          const next = [...actualRepsByExercise];
+                          next[index] = event.target.value;
+                          setActualRepsByExercise(next);
+                        }}
+                        aria-label={`Số lần thực hiện thực tế: ${exercise.name}`}
+                        placeholder="reps thực tế"
+                        className="w-28 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div>

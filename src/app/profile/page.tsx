@@ -92,7 +92,7 @@ export default async function ProfilePage() {
     supabase.from('allergies').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     supabase.from('medications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     supabase.from('health_events').select('*').eq('user_id', user.id).order('event_date', { ascending: false }),
-    supabase.from('health_documents').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+    supabase.from('health_documents').select('*').eq('user_id', user.id).eq('upload_status', 'ready').order('created_at', { ascending: false }),
     supabase.from('activities').select('*').eq('user_id', user.id).order('start_at', { ascending: false }).limit(20),
   ]);
 

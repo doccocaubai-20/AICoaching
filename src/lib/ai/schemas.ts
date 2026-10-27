@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { AISummaryOutput, AIAnswerOutput, AITrendAnalysisOutput } from './types';
 
 export const AIReferenceItemSchema = z.object({
-  type: z.enum(['goal', 'activity', 'observation', 'profile']),
+  type: z.enum(['goal', 'activity', 'observation', 'profile', 'checkin', 'blood_pressure']),
   id: z.string().min(1, 'ID tham chiếu không được rỗng'),
   description: z.string().optional(),
 });

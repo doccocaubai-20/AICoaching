@@ -10,9 +10,8 @@ import {
 import {
   generatePassportId,
   generateQRCodePath,
-  computeRadarDimensions,
-  setActiveSharedCard,
 } from '@/lib/passport/passport-utils';
+import { createPassportShareAction, revokePassportShareAction } from '@/lib/server/passport-share-actions';
 
 interface AthletePassportCardProps {
   userId?: string;
@@ -24,6 +23,7 @@ interface AthletePassportCardProps {
   workContext?: string | null;
   experienceLevel?: string;
   shareableUrl?: string;
+  canManageShare?: boolean;
 }
 
 export function AthletePassportCard({
@@ -35,32 +35,55 @@ export function AthletePassportCard({
   streakDays = 0,
   workContext: _workContext,
   experienceLevel = 'Người mới',
-  shareableUrl = typeof window !== 'undefined' ? window.location.href : 'https://caliscoaching.vn',
+  shareableUrl = '',
+  canManageShare = false,
 }: AthletePassportCardProps) {
   const [copied, setCopied] = useState(false);
+  const [currentShareUrl, setCurrentShareUrl] = useState<string | null>(shareableUrl || null);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
 
   const handleCopyLink = async () => {
-    setActiveSharedCard({ userId, displayName });
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(shareableUrl);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2500);
-      } catch {
-        // Không setCopied khi có lỗi ghi clipboard
+    setShareError(null);
+    let url = currentShareUrl;
+    if (!url && canManageShare) {
+      setIsSharing(true);
+      const result = await createPassportShareAction();
+      setIsSharing(false);
+      if (!result.success || !result.token) {
+        setShareError(result.error || 'Không thể tạo liên kết chia sẻ.');
+        return;
       }
+      url = `${window.location.origin}/passport?share=${encodeURIComponent(result.token)}`;
+      setCurrentShareUrl(url);
+    }
+
+    if (!url) {
+      setShareError('Chủ hồ sơ chưa bật liên kết chia sẻ.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setShareError('Không thể sao chép tự động. Bạn có thể sao chép liên kết bên dưới.');
     }
   };
 
-  // Điểm năng lực 5 chiều dựa trên đo lường và tích lũy thực tế
-  const {
-    pushScore,
-    pullScore,
-    coreScore,
-    enduranceScore,
-    disciplineScore,
-    statusLabel,
-  } = computeRadarDimensions(totalSessions, totalMinutes, streakDays);
+  const handleRevokeShare = async () => {
+    setShareError(null);
+    setIsSharing(true);
+    const result = await revokePassportShareAction();
+    setIsSharing(false);
+    if (!result.success) {
+      setShareError(result.error || 'Không thể thu hồi liên kết chia sẻ.');
+      return;
+    }
+    setCurrentShareUrl(null);
+    setCopied(false);
+  };
 
   return (
     <div className="space-y-5 max-w-sm mx-auto">
@@ -84,8 +107,8 @@ export function AthletePassportCard({
             </div>
           </div>
 
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-slate-300">
-            PASSPORT #CC-{generatePassportId(userId || displayName)}
+          <span className="text-[8px] font-mono px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-slate-300 max-w-[145px] break-all text-right">
+            ID {generatePassportId(userId || displayName)}
           </span>
         </div>
 
@@ -136,67 +159,23 @@ export function AthletePassportCard({
           </div>
         </div>
 
-        {/* Biểu đồ Năng lực Thể chất 5 Chiều */}
-        <div className="space-y-2 bg-black/40 rounded-2xl p-3.5 border border-white/10 text-[11px]">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between">
-            <span>Chỉ Số Năng Lực 5 Chiều</span>
-            <span className="text-emerald-400 font-mono">{statusLabel}</span>
-          </span>
+        <p className="text-[10px] text-slate-400 text-center">
+          Thành tích phản ánh nhật ký do bạn ghi nhận; đây không phải bài kiểm tra hay xác nhận năng lực thể chất.
+        </p>
 
-          <div className="space-y-1.5 pt-1">
-            <div className="flex justify-between items-center text-[10px]">
-              <span className="text-slate-300">Sức Đẩy (Pushing):</span>
-              <span className="font-mono text-emerald-300 font-bold">{pushScore}%</span>
-            </div>
-            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${pushScore}%` }} />
-            </div>
-
-            <div className="flex justify-between items-center text-[10px]">
-              <span className="text-slate-300">Sức Kéo (Pulling):</span>
-              <span className="font-mono text-teal-300 font-bold">{pullScore}%</span>
-            </div>
-            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-teal-400 rounded-full" style={{ width: `${pullScore}%` }} />
-            </div>
-
-            <div className="flex justify-between items-center text-[10px]">
-              <span className="text-slate-300">Cơ Lõi & Kháng Lực (Core):</span>
-              <span className="font-mono text-purple-300 font-bold">{coreScore}%</span>
-            </div>
-            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-purple-400 rounded-full" style={{ width: `${coreScore}%` }} />
-            </div>
-
-            <div className="flex justify-between items-center text-[10px]">
-              <span className="text-slate-300">Độ Bền & Phục Hồi:</span>
-              <span className="font-mono text-amber-300 font-bold">{enduranceScore}%</span>
-            </div>
-            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-amber-400 rounded-full" style={{ width: `${enduranceScore}%` }} />
-            </div>
-
-            <div className="flex justify-between items-center text-[10px]">
-              <span className="text-slate-300">Kỷ Luật Rèn Luyện (Discipline):</span>
-              <span className="font-mono text-rose-300 font-bold">{disciplineScore}%</span>
-            </div>
-            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-rose-400 rounded-full" style={{ width: `${disciplineScore}%` }} />
-            </div>
-          </div>
-        </div>
-
-        {/* QR Code Chia Sẻ Minh Họa */}
+        {/* QR chỉ chứa liên kết chia sẻ đã được chủ hồ sơ bật */}
         <div className="flex items-center justify-between pt-1 border-t border-white/10">
           <div className="space-y-0.5">
-            <span className="text-[10px] text-slate-400 block">Quét mã QR để đối chiếu:</span>
-            <span className="text-[9px] text-slate-500 block">Xác thực bởi CalisCoaching Core</span>
+            <span className="text-[10px] text-slate-400 block">{currentShareUrl ? 'Quét để xem hồ sơ đã chia sẻ:' : 'Liên kết chia sẻ đang tắt'}</span>
+            <span className="text-[9px] text-slate-500 block">Có thể thu hồi liên kết bất cứ lúc nào</span>
           </div>
 
           <div className="w-12 h-12 bg-white rounded-xl p-1 flex items-center justify-center shadow-md">
-            <svg viewBox="0 0 24 24" className="w-full h-full text-slate-900 fill-current">
-              <path d={generateQRCodePath(shareableUrl)} />
-            </svg>
+            {currentShareUrl ? (
+              <svg viewBox="0 0 24 24" className="w-full h-full text-slate-900 fill-current" aria-label="Mã QR hồ sơ chia sẻ">
+                <path d={generateQRCodePath(currentShareUrl)} />
+              </svg>
+            ) : <span className="text-[7px] leading-tight text-slate-500 text-center">Chưa bật QR</span>}
           </div>
         </div>
       </div>
@@ -205,12 +184,33 @@ export function AthletePassportCard({
       <div className="flex gap-2">
         <button
           onClick={handleCopyLink}
-          className="flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-2xl flex items-center justify-center gap-2 transition shadow-md"
+          disabled={isSharing}
+          className="flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-2xl flex items-center justify-center gap-2 transition shadow-md disabled:opacity-60"
         >
           {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
-          <span>{copied ? 'Đã sao chép link thẻ!' : 'Chia sẻ thẻ rèn luyện'}</span>
+          <span>{isSharing ? 'Đang tạo liên kết...' : copied ? 'Đã sao chép link thẻ!' : currentShareUrl ? 'Sao chép link chia sẻ' : 'Bật và chia sẻ hồ sơ'}</span>
         </button>
+        {canManageShare && currentShareUrl && (
+          <button
+            type="button"
+            onClick={handleRevokeShare}
+            disabled={isSharing}
+            className="py-3 px-3 bg-rose-900/70 hover:bg-rose-800 text-rose-100 font-bold text-[10px] rounded-2xl disabled:opacity-60"
+          >
+            Thu hồi link
+          </button>
+        )}
       </div>
+      {currentShareUrl && (
+        <input
+          readOnly
+          value={currentShareUrl}
+          aria-label="Liên kết chia sẻ Passport"
+          onFocus={(event) => event.currentTarget.select()}
+          className="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-[10px] text-slate-300"
+        />
+      )}
+      {shareError && <p role="alert" className="text-[10px] text-rose-300 text-center">{shareError}</p>}
     </div>
   );
 }

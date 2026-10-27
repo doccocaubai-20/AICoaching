@@ -7,44 +7,15 @@
 import QRCode from 'qrcode';
 import { getLocalDateString, getPastLocalDateString, DEFAULT_APP_TIMEZONE } from '@/lib/date-utils';
 
-interface SharedCardInfo {
-  userId?: string;
-  displayName?: string;
-}
-
-let activeSharedCard: SharedCardInfo | null = null;
-
-export function setActiveSharedCard(card: SharedCardInfo | null) {
-  activeSharedCard = card;
-}
-
-export function getActiveSharedCard(): SharedCardInfo | null {
-  return activeSharedCard;
-}
-
-export function setActiveSharedUserId(id: string | null) {
-  if (!id) {
-    activeSharedCard = null;
-  } else {
-    activeSharedCard = { ...activeSharedCard, userId: id };
-  }
-}
-
-export function getActiveSharedUserId(): string | null {
-  return activeSharedCard?.userId || null;
-}
-
 /**
- * 1. Băm mã Passport ID ổn định, phân biệt vị trí ký tự và hạn chế va chạm tối đa.
- * Ưu tiên hash theo userId để ID ổn định bền vững khi người dùng đổi tên.
+ * 1. Hiển thị mã tài khoản ổn định, duy nhất theo UUID thay vì hash rút gọn dễ va chạm.
  */
 export function generatePassportId(identifier: string): string {
-  if (!identifier || identifier.trim().length === 0) return '00000';
-  let hash = 5381;
-  for (let i = 0; i < identifier.length; i++) {
-    hash = ((hash << 5) + hash) + identifier.charCodeAt(i);
+  const normalized = (identifier || '').trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
+    return 'DEMO';
   }
-  return String(Math.abs(hash) % 90000 + 10000);
+  return normalized.replace(/-/g, '').toUpperCase();
 }
 
 /**
@@ -144,44 +115,4 @@ export function calculateStreakDays(
   }
 
   return streak;
-}
-
-/**
- * 4. Tính toán 5 chiều năng lực rèn luyện tích lũy an toàn:
- * - Khi không có buổi tập hoặc số đo: Điểm = 0%, không tự cộng nền 40%, 35%, 30%, 45%.
- * - Tuyệt đối không tuyên bố "Đạt chuẩn" khi không có phép đo thể chất thực.
- */
-export function computeRadarDimensions(
-  totalSessions: number,
-  totalMinutes: number,
-  streakDays: number
-) {
-  // Nếu chưa có hoạt động nào: tất cả đều 0%
-  if (totalSessions <= 0 && totalMinutes <= 0 && streakDays <= 0) {
-    return {
-      hasData: false,
-      pushScore: 0,
-      pullScore: 0,
-      coreScore: 0,
-      enduranceScore: 0,
-      disciplineScore: 0,
-      statusLabel: 'Chưa có dữ liệu rèn luyện',
-    };
-  }
-
-  const pushScore = Math.min(100, Math.round(totalSessions * 10));
-  const pullScore = Math.min(100, Math.round(totalSessions * 8.5));
-  const coreScore = Math.min(100, Math.round(totalSessions * 7.5));
-  const enduranceScore = Math.min(100, Math.round(totalMinutes / 6));
-  const disciplineScore = Math.min(100, Math.round(streakDays * 14));
-
-  return {
-    hasData: true,
-    pushScore,
-    pullScore,
-    coreScore,
-    enduranceScore,
-    disciplineScore,
-    statusLabel: 'Chỉ số rèn luyện tích lũy',
-  };
 }

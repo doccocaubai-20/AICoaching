@@ -22,6 +22,7 @@ const mockState = {
   bp: [] as any[],
   storageFiles: new Map<string, Uint8Array>(),
   storageRemoveCalledWith: [] as string[][],
+  nextDocId: 0,
 };
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
@@ -33,15 +34,6 @@ vi.mock('@/lib/supabase/server', () => ({
   createServerSupabaseClient: async () => ({
     storage: {
       from: () => ({
-        upload: async (path: string, buffer: ArrayBuffer) => {
-          mockState.storageFiles.set(path, new Uint8Array(buffer));
-          return { data: { path }, error: null };
-        },
-        remove: async (paths: string[]) => {
-          mockState.storageRemoveCalledWith.push(paths);
-          paths.forEach((p) => mockState.storageFiles.delete(p));
-          return { data: null, error: null };
-        },
         createSignedUrl: async (path: string, _expires: number) => {
           return { data: { signedUrl: `https://storage.mock.local/${path}?token=signed` }, error: null };
         },
@@ -68,15 +60,24 @@ vi.mock('@/lib/supabase/server', () => ({
           builder._updatePayload = payload;
           return builder;
         },
+        lt: (col: string, val: any) => {
+          builder._filters = builder._filters || [];
+          builder._filters.push({ col: `${col}_lt`, val });
+          return builder;
+        },
         delete: () => {
           return builder;
         },
         single: async () => {
-          return { data: builder._lastInserted, error: null };
+          const doc = table === 'health_documents'
+            ? mockState.docs.find((candidate) => builder._filters?.some((filter: any) => filter.col === 'id' && filter.val === candidate.id) && candidate.upload_status === 'ready')
+            : builder._lastInserted;
+          return { data: doc || builder._lastInserted, error: null };
         },
         maybeSingle: async () => {
           if (table === 'health_documents') {
-            const doc = mockState.docs.find((d) => d.id === builder._filters?.[0]?.val);
+            const idFilter = builder._filters?.find((filter: any) => filter.col === 'id');
+            const doc = mockState.docs.find((d) => d.id === idFilter?.val);
             return { data: doc || null, error: null };
           }
           if (table === 'health_events') {
@@ -85,8 +86,10 @@ vi.mock('@/lib/supabase/server', () => ({
           return { data: null, error: null };
         },
         then: (resolve: any, reject: any) => {
-          if (table === 'health_documents' && builder._fields === 'file_size_bytes') {
-            return Promise.resolve({ data: mockState.docs, error: null }).then(resolve, reject);
+          if (table === 'health_documents' && builder._fields === 'id, storage_path') {
+            const staleBefore = builder._filters?.find((filter: any) => filter.col === 'created_at_lt')?.val;
+            const docs = mockState.docs.filter((doc) => doc.upload_status === 'pending' && doc.created_at < staleBefore);
+            return Promise.resolve({ data: docs, error: null }).then(resolve, reject);
           }
           if (table === 'observations' && builder._updatePayload) {
             return Promise.resolve({ error: null }).then(resolve, reject);
@@ -95,6 +98,67 @@ vi.mock('@/lib/supabase/server', () => ({
             return Promise.resolve({ error: null }).then(resolve, reject);
           }
           return Promise.resolve({ data: [], error: null }).then(resolve, reject);
+        },
+      };
+      return builder;
+    },
+    rpc: async (name: string, args: any) => {
+      if (name === 'reserve_health_document_upload') {
+        const id = `doc-reserved-${++mockState.nextDocId}`;
+        mockState.docs.push({
+          id,
+          user_id: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+          event_id: args.p_event_id,
+          title: args.p_title,
+          file_name: args.p_file_name,
+          file_type: args.p_file_type,
+          file_size_bytes: args.p_file_size_bytes,
+          storage_path: args.p_storage_path,
+          notes: args.p_notes,
+          upload_status: 'pending',
+          created_at: new Date().toISOString(),
+        });
+        return { data: id, error: null };
+      }
+      if (name === 'finalize_health_document_upload') {
+        const doc = mockState.docs.find((candidate) => candidate.id === args.p_document_id);
+        if (!doc || !mockState.storageFiles.has(doc.storage_path)) return { data: null, error: { message: 'Uploaded object is missing' } };
+        doc.upload_status = 'ready';
+        return { data: doc.id, error: null };
+      }
+      if (name === 'cancel_health_document_upload') {
+        mockState.docs = mockState.docs.filter((doc) => doc.id !== args.p_document_id || doc.upload_status !== 'pending');
+        return { data: true, error: null };
+      }
+      return { data: null, error: { message: `Unexpected RPC ${name}` } };
+    },
+  }),
+}));
+
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminSupabaseClient: () => ({
+    storage: {
+      from: () => ({
+        upload: async (path: string, buffer: ArrayBuffer) => {
+          mockState.storageFiles.set(path, new Uint8Array(buffer));
+          return { data: { path }, error: null };
+        },
+        remove: async (paths: string[]) => {
+          mockState.storageRemoveCalledWith.push(paths);
+          paths.forEach((path) => mockState.storageFiles.delete(path));
+          return { data: null, error: null };
+        },
+      }),
+    },
+    from: (table: string) => {
+      const builder: any = {
+        select: () => builder,
+        eq: (col: string, val: any) => { builder.filters = { ...(builder.filters || {}), [col]: val }; return builder; },
+        update: (payload: any) => { builder.payload = payload; return builder; },
+        maybeSingle: async () => {
+          const doc = mockState.docs.find((candidate) => Object.entries(builder.filters || {}).every(([key, value]) => candidate[key] === value));
+          if (doc && builder.payload) Object.assign(doc, builder.payload);
+          return { data: doc ? { id: doc.id } : null, error: null };
         },
       };
       return builder;
@@ -109,6 +173,7 @@ describe('Kiểm thử Thao tác Nâng cao V2 (E2, E6, E7)', () => {
     mockState.bp = [];
     mockState.storageFiles.clear();
     mockState.storageRemoveCalledWith = [];
+    mockState.nextDocId = 0;
   });
 
   // ============================================================================
@@ -157,6 +222,7 @@ describe('Kiểm thử Thao tác Nâng cao V2 (E2, E6, E7)', () => {
         id: 'doc-rename-1',
         user_id: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
         title: 'Tên cũ',
+        upload_status: 'ready',
       });
 
       const res = await renameHealthDocumentAction('doc-rename-1', 'Tên mới đã cập nhật');
@@ -281,6 +347,18 @@ describe('Kiểm thử Thao tác Nâng cao V2 (E2, E6, E7)', () => {
       // Số liệu do code tính (mẫu số đúng và trung bình ngủ tính cả 0 phút)
       expect(contextWith.daily_checkins_summary?.recorded_days).toBe(2);
       expect(contextWith.daily_checkins_summary?.average_sleep_minutes).toBe(225); // (450 + 0) / 2 = 225
+
+      const localDateContext = buildAIContext({
+        dailyCheckins: [{ ...mockCheckins[0], id: 'ck-local', local_date: '2026-10-28' }],
+        scope: ['daily_checkins'],
+        dateWindow: {
+          from: '2026-10-27T17:00:00Z',
+          to: '2026-10-27T18:00:00Z',
+          localDateFrom: '2026-10-28',
+          localDateTo: '2026-10-28',
+        },
+      });
+      expect(localDateContext.context.daily_checkins?.map((checkin) => checkin.id)).toEqual(['ck-local']);
     });
 
     it('E7.2: Chỉ đưa huyết áp vào ngữ cảnh AI khi scope có blood_pressures', () => {

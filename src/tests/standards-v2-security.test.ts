@@ -14,6 +14,7 @@ import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 
 const USER_A = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
 const USER_B = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
+const USER_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 const SUPABASE_STUB = `
 CREATE SCHEMA IF NOT EXISTS auth;
@@ -85,6 +86,7 @@ async function as<T>(actor: Actor, fn: (tx: Transaction) => Promise<T>): Promise
 
 const actorUserA: Actor = { role: 'authenticated', uid: USER_A };
 const actorUserB: Actor = { role: 'authenticated', uid: USER_B };
+const actorUserC: Actor = { role: 'authenticated', uid: USER_C };
 const actorAnon: Actor = { role: 'anon' };
 
 describe('Kiểm thử An Ninh & Toàn Vẹn DB V2 (S1, S2, S4)', () => {
@@ -102,7 +104,8 @@ describe('Kiểm thử An Ninh & Toàn Vẹn DB V2 (S1, S2, S4)', () => {
     await db.exec(`
       INSERT INTO auth.users (id, email) VALUES
         ('${USER_A}', 'usera.security@example.com'),
-        ('${USER_B}', 'userb.security@example.com')
+        ('${USER_B}', 'userb.security@example.com'),
+        ('${USER_C}', 'userc.security@example.com')
       ON CONFLICT DO NOTHING;
     `);
   });
@@ -111,25 +114,22 @@ describe('Kiểm thử An Ninh & Toàn Vẹn DB V2 (S1, S2, S4)', () => {
   // S1: Storage Objects Policies
   // ============================================================================
   describe('S1: Storage RLS Policies cho bucket health_documents', () => {
-    it('S1.1: Phải có 4 RLS policies trên storage.objects cho bucket health_documents', async () => {
+    it('S1.1: Chỉ đọc qua RLS; thao tác ghi phải qua server có kiểm quota', async () => {
       const res = await db.query(
         "SELECT policyname FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects'"
       );
       const policyNames = res.rows.map((r: any) => r.policyname);
       expect(policyNames).toContain('health_documents_owner_select');
-      expect(policyNames).toContain('health_documents_owner_insert');
-      expect(policyNames).toContain('health_documents_owner_update');
-      expect(policyNames).toContain('health_documents_owner_delete');
+      expect(policyNames).not.toContain('health_documents_owner_insert');
+      expect(policyNames).not.toContain('health_documents_owner_update');
+      expect(policyNames).not.toContain('health_documents_owner_delete');
     });
 
-    it('S1.2: Authenticated User A có quyền insert file vào thư mục của mình (USER_A/...)', async () => {
-      const res = await as(actorUserA, async (tx) => {
-        return tx.query(
-          "INSERT INTO storage.objects (bucket_id, name) VALUES ('health_documents', $1) RETURNING id",
-          [`${USER_A}/test-doc.pdf`]
-        );
-      });
-      expect(res.rows.length).toBe(1);
+    it('S1.2: Authenticated User A không thể bỏ qua quota và tự ghi file vào Storage', async () => {
+      await expect(as(actorUserA, async (tx) => tx.query(
+        "INSERT INTO storage.objects (bucket_id, name) VALUES ('health_documents', $1) RETURNING id",
+        [`${USER_A}/test-doc.pdf`]
+      ))).rejects.toThrow(/row-level security/);
     });
 
     it('S1.3: Authenticated User A KHÔNG THỂ insert file vào thư mục của User B (USER_B/...)', async () => {
@@ -196,15 +196,14 @@ describe('Kiểm thử An Ninh & Toàn Vẹn DB V2 (S1, S2, S4)', () => {
             [USER_A, eventBId, `${USER_A}/test.pdf`]
           );
         })
-      ).rejects.toThrow(/Cannot link health document to an event owned by another user/);
+      ).rejects.toThrow(/row-level security|Cannot link health document to an event owned by another user/);
     });
 
-    it('S2.2: User A chèn tài liệu liên kết với event của chính mình thì thành công', async () => {
+    it('S2.2: User A giữ chỗ tài liệu với event của chính mình qua RPC thì thành công', async () => {
       const res = await as(actorUserA, async (tx) => {
         return tx.query(
-          `INSERT INTO health_documents (user_id, event_id, title, file_name, file_type, file_size_bytes, storage_path)
-           VALUES ($1, $2, 'File Hợp Lệ', 'my_doc.pdf', 'application/pdf', 2048, $3) RETURNING id`,
-          [USER_A, eventAId, `${USER_A}/my_doc.pdf`]
+          `SELECT reserve_health_document_upload($1, 'File Hợp Lệ', 'my_doc.pdf', 'application/pdf', 2048, $2, NULL) AS id`,
+          [eventAId, `${USER_A}/my_doc.pdf`]
         );
       });
       expect(res.rows.length).toBe(1);
@@ -219,6 +218,21 @@ describe('Kiểm thử An Ninh & Toàn Vẹn DB V2 (S1, S2, S4)', () => {
         return tx.query("SELECT event_id FROM health_documents WHERE title = 'File Hợp Lệ'");
       });
       expect((docRes.rows[0] as { event_id: string | null }).event_id).toBeNull();
+    });
+
+    it('S2.4: Reservation database không cho vượt quota 100 MiB', async () => {
+      const fileSize = 4 * 1024 * 1024;
+      for (let index = 0; index < 25; index++) {
+        await as(actorUserC, async (tx) => tx.query(
+          `SELECT reserve_health_document_upload(NULL, 'Quota probe', 'probe-${index}.pdf', 'application/pdf', $1, $2, NULL)`,
+          [fileSize, `${USER_C}/probe-${index}.pdf`]
+        ));
+      }
+
+      await expect(as(actorUserC, async (tx) => tx.query(
+        `SELECT reserve_health_document_upload(NULL, 'Quota probe', 'overflow.pdf', 'application/pdf', $1, $2, NULL)`,
+        [1, `${USER_C}/overflow.pdf`]
+      ))).rejects.toThrow(/User storage quota exceeded/);
     });
   });
 

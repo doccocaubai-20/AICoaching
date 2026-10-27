@@ -1,4 +1,4 @@
-// Review-only tests against the frozen 5a9291b snapshot. No cloud or real user data.
+// Regression tests for review fixes. No cloud or real user data.
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   readError: false,
   activities: [] as any[],
   setters: [] as Array<{ initial: unknown; set: ReturnType<typeof vi.fn> }>,
+  shareToken: 'synthetic-share-token-012345678901234567890123',
 }));
 vi.mock('react', async importOriginal => {
   const original = await importOriginal<typeof import('react')>();
@@ -33,16 +34,22 @@ vi.mock('@/lib/supabase/server', () => ({ createServerSupabaseClient: async () =
     const query: any = {
       select: () => query, eq: () => query, order: () => query, limit: () => query,
       gte: () => query, lte: () => query, or: () => query,
+      is: () => query,
       maybeSingle: result,
       then: (resolve: any, reject: any) => result().then(resolve, reject),
     };
     return query;
   },
 }) }));
+vi.mock('@/lib/server/passport-share-actions', () => ({
+  createPassportShareAction: async () => ({ success: true, token: state.shareToken }),
+  revokePassportShareAction: async () => ({ success: true }),
+}));
 
 import PassportPage from '@/app/passport/page';
 import DashboardPage from '@/app/dashboard/page';
 import { AthletePassportCard } from '@/components/passport/AthletePassportCard';
+import { getLocalDateStartInstant, getPastLocalDateString } from '@/lib/date-utils';
 
 function find(node: any, predicate: (item: any) => boolean): any {
   if (!node || typeof node !== 'object') return null;
@@ -71,21 +78,15 @@ describe('Experience review: claimed behavior on actual changed components/route
     expect(qr(a)).not.toBe(qr(b));
   });
 
-  it('must preserve the shared card owner when another logged-in user follows its link', async () => {
-    vi.stubGlobal('window', { location: { href: 'https://example.invalid/passport' } });
+  it('must generate an explicit token URL and ignore legacy user-id sharing', async () => {
+    vi.stubGlobal('window', { location: { href: 'https://example.invalid/passport', origin: 'https://example.invalid' } });
     const writeText = vi.fn((_value: string) => Promise.resolve());
     vi.stubGlobal('navigator', { clipboard: { writeText } });
-    const ownerTree = await PassportPage();
-    const owner = find(ownerTree, node => node.type === AthletePassportCard).props;
-    const ownerCard = AthletePassportCard(owner);
-    find(ownerCard, node => node.type === 'button').props.onClick();
-    state.uid = 'synthetic-b';
-    // The generated link is the generic /passport route. It has no owner/token payload.
-    const viewerTree = await PassportPage();
-    const viewer = find(viewerTree, node => node.type === AthletePassportCard).props;
-    expect({ copiedUrl: writeText.mock.calls[0][0], displayedOwner: viewer.displayName }).toEqual({
-      copiedUrl: expect.any(String), displayedOwner: owner.displayName,
-    });
+    const card = AthletePassportCard({ ...base, canManageShare: true });
+    await find(card, node => node.type === 'button').props.onClick();
+    expect(writeText).toHaveBeenCalledWith(`https://example.invalid/passport?share=${state.shareToken}`);
+    const ownPage = await PassportPage({ params: Promise.resolve({}), searchParams: Promise.resolve({ u: 'synthetic-b' }) });
+    expect(find(ownPage, node => node.type === AthletePassportCard).props.userId).toBe('synthetic-a');
   });
 
   it('must show zero streak for a user who has never exercised', async () => {
@@ -101,20 +102,31 @@ describe('Experience review: claimed behavior on actual changed components/route
     expect(find(tree, node => node.type === AthletePassportCard).props.streakDays).toBeLessThanOrEqual(1);
   });
 
+  it('must keep local calendar dates correct across a daylight-saving transition', () => {
+    const justAfterMidnight = new Date('2026-03-09T04:30:00.000Z');
+    expect(getPastLocalDateString(1, justAfterMidnight, 'America/New_York')).toBe('2026-03-08');
+    expect(getLocalDateStartInstant('2026-03-08', 'America/New_York').toISOString()).toBe('2026-03-08T05:00:00.000Z');
+    expect(getLocalDateStartInstant('2026-03-09', 'America/New_York').toISOString()).toBe('2026-03-09T04:00:00.000Z');
+    expect(Number.isNaN(getLocalDateStartInstant('2026-02-30', 'America/New_York').getTime())).toBe(true);
+  });
+
   it('must not certify physical capability when there are no measurements', () => {
     expect(markup()).not.toMatch(/Đạt chuẩn|40%|35%|30%|45%/);
   });
 
-  it('must render the promised fifth dimension when labeled 5-dimensional', () => {
+  it('must not render invented fitness dimensions without measured data', () => {
     const html = markup();
-    expect(html).toContain('5 Chiều');
-    const bars = [...html.matchAll(/style="width:[0-9.]+%"/g)];
-    expect(bars).toHaveLength(5);
+    expect(html).not.toContain('5 Chiều');
+    expect(html).not.toMatch(/Đạt chuẩn|40%|35%|30%|45%/);
   });
 
-  it('must not assign the same claimed passport identifier to AB and BA', () => {
-    const id = (name: string) => markup({ displayName: name }).match(/PASSPORT #CC-(\d+)/)?.[1];
-    expect(id('AB')).not.toBe(id('BA'));
+  it('must show a stable full identifier only for a valid account UUID', () => {
+    const first = markup({ userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
+    const second = markup({ userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' });
+    const id = (html: string) => html.match(/ID ([A-F0-9]{32})/)?.[1];
+    expect(id(first)).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'.replace(/-/g, '').toUpperCase());
+    expect(id(second)).toBe('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'.replace(/-/g, '').toUpperCase());
+    expect(id(first)).not.toBe(id(second));
   });
 
   it('must show a read failure instead of silently issuing an empty passport', async () => {

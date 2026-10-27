@@ -29,6 +29,8 @@ export interface BuildAIContextInput {
   dateWindow?: {
     from: string;
     to: string;
+    localDateFrom?: string;
+    localDateTo?: string;
   };
   scope?: ConsentScopeItem[];
 }
@@ -146,8 +148,8 @@ export function buildAIContext(input: BuildAIContextInput): {
   let daily_checkins_summary: AIContextPayload['daily_checkins_summary'] = undefined;
 
   if (effectiveScope.includes('daily_checkins') && input.dailyCheckins) {
-    const fromDateStr = new Date(fromTime).toISOString().slice(0, 10);
-    const toDateStr = new Date(toTime).toISOString().slice(0, 10);
+    const fromDateStr = input.dateWindow?.localDateFrom || new Date(fromTime).toISOString().slice(0, 10);
+    const toDateStr = input.dateWindow?.localDateTo || new Date(toTime).toISOString().slice(0, 10);
 
     const filteredCheckins = input.dailyCheckins.filter(
       (c) => c.local_date && c.local_date >= fromDateStr && c.local_date <= toDateStr

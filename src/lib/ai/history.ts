@@ -36,6 +36,8 @@ function isMessageScopeCompliant(
       if (ref.type === 'activity' && !scope.includes('activities')) return false;
       if (ref.type === 'goal' && !scope.includes('goals')) return false;
       if (ref.type === 'profile' && !scope.includes('profile')) return false;
+      if (ref.type === 'checkin' && !scope.includes('daily_checkins')) return false;
+      if (ref.type === 'blood_pressure' && !scope.includes('blood_pressures')) return false;
     }
   }
 
@@ -69,6 +71,18 @@ function isMessageScopeCompliant(
   // 4. Kiểm tra từ khóa nội dung nếu thiếu goals
   if (!scope.includes('goals')) {
     if (lower.includes('mục tiêu') || lower.includes('goal')) {
+      return false;
+    }
+  }
+
+  if (!scope.includes('daily_checkins')) {
+    if (lower.includes('giấc ngủ') || lower.includes('ngủ') || lower.includes('mức năng lượng') || lower.includes('mệt mỏi') || lower.includes('stress')) {
+      return false;
+    }
+  }
+
+  if (!scope.includes('blood_pressures')) {
+    if (lower.includes('huyết áp') || lower.includes('tâm thu') || lower.includes('tâm trương') || lower.includes('blood pressure')) {
       return false;
     }
   }

@@ -24,7 +24,7 @@ Theo đúng yêu cầu tại Mục 1 của kế hoạch, ứng dụng đã đáp
    - Phân định rõ ràng: Bệnh do người dùng khai là đã được bác sĩ chẩn đoán (`diagnosed_condition`) vs Triệu chứng tự ghi nhận (`self_reported_symptom`) vs Chấn thương (`injury`). Ứng dụng tuyệt đối không tự chẩn đoán hay kê đơn.
    - Dị ứng có trạng thái "Chưa biết / Chưa khai" (`unknown_or_unrecorded`), không tự suy thành không dị ứng.
    - Thuốc lưu nguyên văn hướng dẫn do người dùng nhập, quản lý trạng thái Đang dùng ↔ Đã ngừng.
-   - Quản lý sự kiện khám bệnh / xét nghiệm / tiêm chủng và lưu trữ tài liệu y tế (PDF, JPG, PNG ≤ 10MB) với bảo mật Private Storage.
+   - Quản lý sự kiện khám bệnh / xét nghiệm / tiêm chủng và lưu trữ tài liệu y tế (PDF, JPG, PNG ≤ 4 MiB) với bảo mật Private Storage.
 
 ---
 
@@ -42,8 +42,8 @@ Theo đúng yêu cầu tại Mục 1 của kế hoạch, ứng dụng đã đáp
 | `allergies` | Tác nhân và phản ứng dị ứng tự khai | Phân biệt `known` vs `unknown_or_unrecorded`, mức độ nhẹ/vừa/nặng. |
 | `medications` | Thông tin thuốc người dùng tự khai | Lưu tên, hướng dẫn dùng nguyên văn, trạng thái `active` vs `stopped`. |
 | `health_events` | Sự kiện khám, xét nghiệm, tiêm chủng | Loại sự kiện, ngày diễn ra, cơ sở y tế thực hiện. |
-| `health_documents` | Metadata tài liệu y tế / phiếu khám | FK liên kết `health_events(id) ON DELETE SET NULL`, giới hạn ≤ 10MB, MIME: PDF, JPEG, PNG. |
-| `storage.buckets` | Bucket lưu trữ tệp tin riêng tư (`health_documents`) | Cấu hình private bucket, giới hạn 10MB cho tệp tài liệu y tế. |
+| `health_documents` | Metadata tài liệu y tế / phiếu khám | FK liên kết `health_events(id) ON DELETE SET NULL`, giới hạn ≤ 4 MiB mỗi file và quota 100 MiB mỗi tài khoản, MIME: PDF, JPEG, PNG. |
+| `storage.buckets` | Bucket lưu trữ tệp tin riêng tư (`health_documents`) | Cấu hình private bucket, giới hạn 4 MiB cho tệp tài liệu y tế. |
 
 ---
 

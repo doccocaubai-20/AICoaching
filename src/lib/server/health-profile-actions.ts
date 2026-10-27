@@ -6,8 +6,10 @@
  */
 
 import { revalidatePath } from 'next/cache';
+import { randomUUID } from 'node:crypto';
 import { requireAuthenticatedUser } from '@/lib/server/auth-guard';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createAdminSupabaseClient } from '@/lib/supabase/admin';
 import {
   HealthProfileEntity,
   UpdateHealthProfileInput,
@@ -39,7 +41,6 @@ import {
   MetricType,
   ObservationSource,
   MAX_DOCUMENT_SIZE_BYTES,
-  USER_STORAGE_QUOTA_BYTES,
   ALLOWED_DOCUMENT_MIME_TYPES,
   HealthDocumentFileType,
 } from '@/contracts';
@@ -561,15 +562,17 @@ export async function uploadHealthDocumentAction(formData: FormData): Promise<Ac
     const { user } = await requireAuthenticatedUser();
     const supabase = await createServerSupabaseClient();
     if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
+    const adminClient = createAdminSupabaseClient();
+    if (!adminClient) return { success: false, message: 'Chưa cấu hình khóa lưu trữ phía máy chủ.' };
 
     const file = formData.get('file') as File | null;
     if (!file || typeof file === 'string' || file.size === 0) {
       return { success: false, message: 'Vui lòng chọn tệp tài liệu hợp lệ.' };
     }
 
-    // 1. Kiểm tra kích thước tệp (tối đa 10MB)
+    // 1. Giới hạn 4 MiB để multipart request nằm trong giới hạn body của Vercel.
     if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
-      return { success: false, message: 'Kích thước tệp vượt quá giới hạn 10MB.' };
+      return { success: false, message: 'Kích thước tệp vượt quá giới hạn 4 MiB.' };
     }
 
     // 2. Kiểm tra định dạng MIME
@@ -578,20 +581,33 @@ export async function uploadHealthDocumentAction(formData: FormData): Promise<Ac
       return { success: false, message: 'Định dạng tệp không được hỗ trợ. Chỉ chấp nhận PDF, JPEG, PNG.' };
     }
 
-    // 3. [S1] Sử dụng khóa tuần tự hóa theo người dùng để ngăn chặn hoàn toàn race condition quota đồng thời
+    // 3. Khóa trong tiến trình giảm tải; RPC bên dưới mới là điểm quyết định quota giữa mọi instance.
     return await runWithUserUploadLock(user.id, async () => {
-      const { data: existingDocs, error: quotaErr } = await supabase
+      const staleBefore = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { data: staleDocs, error: staleError } = await supabase
         .from('health_documents')
-        .select('file_size_bytes')
-        .eq('user_id', user.id);
+        .select('id, storage_path')
+        .eq('user_id', user.id)
+        .eq('upload_status', 'pending')
+        .lt('created_at', staleBefore);
 
-      if (quotaErr) {
-        return { success: false, message: 'Không thể kiểm tra dung lượng tài khoản: ' + quotaErr.message };
+      if (staleError) {
+        return { success: false, message: 'Không thể kiểm tra lượt tải lên bị dở: ' + staleError.message };
       }
 
-      const currentUsage = (existingDocs || []).reduce((acc, d) => acc + (d.file_size_bytes || 0), 0);
-      if (currentUsage + file.size > USER_STORAGE_QUOTA_BYTES) {
-        return { success: false, message: 'Vượt quá hạn mức lưu trữ tài liệu y tế (100MB/người dùng).' };
+      for (const staleDoc of staleDocs || []) {
+        const { error: removeStaleError } = await adminClient.storage
+          .from('health_documents')
+          .remove([staleDoc.storage_path]);
+        if (removeStaleError) {
+          return { success: false, message: 'Không thể dọn lượt tải lên bị dở: ' + removeStaleError.message };
+        }
+        const { error: cancelStaleError } = await supabase.rpc('cancel_health_document_upload', {
+          p_document_id: staleDoc.id,
+        });
+        if (cancelStaleError) {
+          return { success: false, message: 'Không thể giải phóng dung lượng đang giữ: ' + cancelStaleError.message };
+        }
       }
 
       // 4. Kiểm tra magic bytes
@@ -601,7 +617,7 @@ export async function uploadHealthDocumentAction(formData: FormData): Promise<Ac
       if (mimeType === 'application/pdf') {
         isValidContent = bytes.length >= 5 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2D;
       } else if (mimeType === 'image/png') {
-        isValidContent = bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47;
+        isValidContent = bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47 && bytes[4] === 0x0D && bytes[5] === 0x0A && bytes[6] === 0x1A && bytes[7] === 0x0A;
       } else if (mimeType === 'image/jpeg') {
         isValidContent = bytes.length >= 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF;
       }
@@ -628,34 +644,34 @@ export async function uploadHealthDocumentAction(formData: FormData): Promise<Ac
 
       // 6. Tạo đường dẫn an toàn do Server kiểm soát
       const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const randomUuid = crypto.randomUUID();
+      const randomUuid = randomUUID();
       const storagePath = `${user.id}/${randomUuid}-${sanitizedName}`;
       const rawTitle = (formData.get('title') as string) || file.name;
       const rawNotes = formData.get('notes') as string | null;
 
-      // 7. [S2] Lưu metadata vào DB trước để giữ chỗ bền vững
-      // Nếu bước này lỗi, file CHƯA upload lên storage nên không bao giờ tạo tệp mồ côi
-      const { data: newDoc, error: insertError } = await supabase
-        .from('health_documents')
-        .insert({
-          user_id: user.id,
-          event_id: eventId,
-          title: rawTitle.trim(),
-          file_name: file.name,
-          file_type: mimeType,
-          file_size_bytes: file.size,
-          storage_path: storagePath,
-          notes: rawNotes?.trim() || null,
-        })
-        .select('*')
-        .single();
+      // RPC giữ chỗ và kiểm tra quota trong một transaction có advisory lock cấp database.
+      const { data: documentId, error: reserveError } = await supabase.rpc('reserve_health_document_upload', {
+        p_event_id: eventId,
+        p_title: rawTitle.trim(),
+        p_file_name: file.name,
+        p_file_type: mimeType,
+        p_file_size_bytes: file.size,
+        p_storage_path: storagePath,
+        p_notes: rawNotes?.trim() || null,
+      });
 
-      if (insertError) {
-        return { success: false, message: 'Lỗi lưu thông tin tài liệu: ' + insertError.message };
+      if (reserveError || !documentId) {
+        const message = reserveError?.message || 'Không thể giữ chỗ cho tệp tải lên.';
+        return {
+          success: false,
+          message: message.toLowerCase().includes('quota')
+            ? 'Vượt quá hạn mức lưu trữ tài liệu y tế (100 MB/người dùng).'
+            : 'Không thể lưu thông tin tài liệu: ' + message,
+        };
       }
 
-      // 8. Upload file lên private bucket sau khi metadata đã được giữ chỗ
-      const { error: uploadError } = await supabase.storage
+      // Upload bằng khóa server để authenticated clients không thể bỏ qua quota.
+      const { error: uploadError } = await adminClient.storage
         .from('health_documents')
         .upload(storagePath, arrayBuffer, {
           contentType: file.type,
@@ -663,9 +679,33 @@ export async function uploadHealthDocumentAction(formData: FormData): Promise<Ac
         });
 
       if (uploadError) {
-        // Dọn dẹp metadata nếu upload storage thất bại
-        await supabase.from('health_documents').delete().eq('storage_path', storagePath);
+        const { error: cleanupError } = await adminClient.storage.from('health_documents').remove([storagePath]);
+        if (!cleanupError) {
+          await supabase.rpc('cancel_health_document_upload', { p_document_id: documentId });
+        }
         return { success: false, message: 'Lỗi tải tệp lên kho lưu trữ: ' + uploadError.message };
+      }
+
+      const { error: finalizeError } = await supabase.rpc('finalize_health_document_upload', {
+        p_document_id: documentId,
+      });
+      if (finalizeError) {
+        const { error: cleanupError } = await adminClient.storage.from('health_documents').remove([storagePath]);
+        if (!cleanupError) {
+          await supabase.rpc('cancel_health_document_upload', { p_document_id: documentId });
+        }
+        return { success: false, message: 'Tệp đã tải lên nhưng chưa thể hoàn tất: ' + finalizeError.message };
+      }
+
+      const { data: newDoc, error: readError } = await supabase
+        .from('health_documents')
+        .select('*')
+        .eq('id', documentId)
+        .eq('user_id', user.id)
+        .eq('upload_status', 'ready')
+        .single();
+      if (readError || !newDoc) {
+        return { success: false, message: 'Đã tải tệp nhưng không thể tải lại hồ sơ tài liệu.' };
       }
 
       revalidatePath('/profile');
@@ -688,6 +728,7 @@ export async function getHealthDocumentSignedUrlAction(id: string): Promise<Acti
       .select('storage_path')
       .eq('id', id)
       .eq('user_id', user.id)
+      .eq('upload_status', 'ready')
       .maybeSingle();
 
     if (docError || !doc) {
@@ -711,22 +752,30 @@ export async function getHealthDocumentSignedUrlAction(id: string): Promise<Acti
 export async function renameHealthDocumentAction(id: string, newTitle: string): Promise<ActionResult> {
   try {
     const { user } = await requireAuthenticatedUser();
-    const supabase = await createServerSupabaseClient();
-    if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
+    const adminClient = createAdminSupabaseClient();
+    if (!adminClient) return { success: false, message: 'Chưa cấu hình Supabase.' };
 
     if (!newTitle || newTitle.trim().length === 0) {
       return { success: false, message: 'Tiêu đề tài liệu không được để trống.' };
     }
 
-    const { error } = await supabase
+    if (newTitle.trim().length > 200) {
+      return { success: false, message: 'Tiêu đề tài liệu không được vượt quá 200 ký tự.' };
+    }
+
+    const { data, error } = await adminClient
       .from('health_documents')
       .update({ title: newTitle.trim() })
       .eq('id', id)
-      .eq('user_id', user.id);
+      .eq('user_id', user.id)
+      .eq('upload_status', 'ready')
+      .select('id')
+      .maybeSingle();
 
     if (error) {
       return { success: false, message: 'Lỗi đổi tên tài liệu: ' + error.message };
     }
+    if (!data) return { success: false, message: 'Tài liệu không tồn tại hoặc không thuộc quyền sở hữu của bạn.' };
 
     revalidatePath('/profile');
     revalidatePath('/health');
@@ -740,7 +789,8 @@ export async function deleteHealthDocumentAction(id: string): Promise<ActionResu
   try {
     const { user } = await requireAuthenticatedUser();
     const supabase = await createServerSupabaseClient();
-    if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
+    const adminClient = createAdminSupabaseClient();
+    if (!supabase || !adminClient) return { success: false, message: 'Chưa cấu hình Supabase.' };
 
     // 1. Lấy thông tin tài liệu để lấy storage_path
     const { data: doc, error: docError } = await supabase
@@ -748,6 +798,7 @@ export async function deleteHealthDocumentAction(id: string): Promise<ActionResu
       .select('storage_path')
       .eq('id', id)
       .eq('user_id', user.id)
+      .eq('upload_status', 'ready')
       .maybeSingle();
 
     if (docError) {
@@ -759,7 +810,7 @@ export async function deleteHealthDocumentAction(id: string): Promise<ActionResu
 
     if (doc.storage_path) {
       // 2. Thử xóa tệp từ storage
-      const { error: storageError } = await supabase.storage.from('health_documents').remove([doc.storage_path]);
+      const { error: storageError } = await adminClient.storage.from('health_documents').remove([doc.storage_path]);
       if (storageError) {
         // [S3] XÓA FILE LỖI: KHÔNG ĐƯỢC XÓA METADATA VÀ KHÔNG BÁO THÀNH CÔNG!
         return {
@@ -770,7 +821,7 @@ export async function deleteHealthDocumentAction(id: string): Promise<ActionResu
     }
 
     // 3. Xóa bản ghi trong database chỉ khi file storage đã được xóa thành công
-    const { error } = await supabase
+    const { error } = await adminClient
       .from('health_documents')
       .delete()
       .eq('id', id)

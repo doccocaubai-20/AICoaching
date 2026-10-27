@@ -719,6 +719,7 @@ export interface Database {
           file_size_bytes: number;
           storage_path: string;
           notes: string | null;
+          upload_status: 'pending' | 'ready';
           created_at: string;
           updated_at: string;
         };
@@ -732,6 +733,7 @@ export interface Database {
           file_size_bytes: number;
           storage_path: string;
           notes?: string | null;
+          upload_status?: 'pending' | 'ready';
           created_at?: string;
           updated_at?: string;
         };
@@ -745,6 +747,31 @@ export interface Database {
           file_size_bytes?: number;
           storage_path?: string;
           notes?: string | null;
+          upload_status?: 'pending' | 'ready';
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      athlete_passport_shares: {
+        Row: {
+          user_id: string;
+          token: string;
+          revoked_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          token: string;
+          revoked_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          token?: string;
+          revoked_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -755,7 +782,26 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      reserve_health_document_upload: {
+        Args: {
+          p_event_id: string | null;
+          p_title: string;
+          p_file_name: string;
+          p_file_type: HealthDocumentFileType;
+          p_file_size_bytes: number;
+          p_storage_path: string;
+          p_notes: string | null;
+        };
+        Returns: string;
+      };
+      finalize_health_document_upload: {
+        Args: { p_document_id: string };
+        Returns: string;
+      };
+      cancel_health_document_upload: {
+        Args: { p_document_id: string };
+        Returns: boolean;
+      };
     };
     Enums: {
       [_ in never]: never;

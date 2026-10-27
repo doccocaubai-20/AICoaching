@@ -88,8 +88,16 @@ describe('7debc35 actual integration review', () => {
     const tree = render(() => LiveWorkoutModal({ session: { id: 'synthetic-session', title: 'Synthetic', exercises: [
       { name: 'Synthetic exercise', sets: 2, target_reps: '8–12', rest_seconds: 30 },
     ] } as any, onFinishWorkout: save, onClose() {} }));
-    await find(tree, n => n.type === 'button' && n.props.disabled !== undefined).props.onClick();
-    expect(save.mock.calls[0][0].completedExercises[0].actual_reps).not.toBe('8–12');
+    const buttons = [] as any[];
+    const collectButtons = (node: any) => {
+      if (!node || typeof node !== 'object') return;
+      if (node.type === 'button') buttons.push(node);
+      for (const child of [node.props?.children].flat(Infinity)) collectButtons(child);
+    };
+    collectButtons(tree);
+    const saveButton = buttons.find(button => String(button.props.className).includes('from-amber-400'));
+    await saveButton?.props.onClick();
+    expect(save).not.toHaveBeenCalled();
   });
 
   it('must block background-profile overwrite after its initial read failed', async () => {

@@ -345,7 +345,7 @@ export function EventsAndDocumentsTab({ healthEvents, documents }: EventsAndDocu
             {/* Bộ chọn tệp thật */}
             <div>
               <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">
-                Chọn tệp từ thiết bị (PDF, JPEG, PNG • Tối đa 10MB)
+                Chọn tệp từ thiết bị (PDF, JPEG, PNG • Tối đa 4 MiB)
               </label>
               <input
                 type="file"

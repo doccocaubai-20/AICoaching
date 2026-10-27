@@ -4,7 +4,7 @@
 **Nhánh Git:** `feature/health-v2-breakthrough-experience`  
 **Ngày cập nhật:** 27/10/2026  
 **Trạng thái kiểm thử:** 214/214 tests passed across 20 test suites (100% pass tuần tự)  
-**Biên dịch & Build:** `npx tsc --noEmit --incremental false` đạt 0 lỗi; `npm run build` thành công 100% với Next.js 15 và Server Actions bodySizeLimit 10MB (bao gồm tất cả các route: `/`, `/dashboard`, `/health`, `/passport`, `/programs`, `/activities`, `/profile`, `/ai`)
+**Biên dịch & Build tại lần bàn giao ban đầu:** ghi nhận ở commit trước các sửa lỗi review. Hiện giới hạn Server Actions là 4.5MB để nhận tệp tối đa 4 MiB qua Vercel; xem phần cập nhật sửa lỗi review ở cuối tài liệu.
 
 ---
 
@@ -38,7 +38,7 @@ Trên nhánh mới `feature/health-v2-breakthrough-experience`, chúng tôi đã
     * Tiếng Ding trong trẻo khi bấm *"Xong hiệp này 🎯"*.
     * Kích hoạt ngay **Đồng hồ đếm ngược thời gian nghỉ (Rest Timer 60s/90s)** dạng vòng tròn (Circular Progress).
     * Khi đồng hồ nghỉ về 3, 2, 1 -> phát tiếng Beep; về 0 -> phát tiếng chuông reo **Rest Over Alarm** báo vào hiệp tiếp theo.
-  * **Kết thúc buổi tập:** Tự động phát nhạc chiến thắng (Fanfare), thanh trượt chọn mức mệt RPE (1-10) và lưu kết quả tự động vào cơ sở dữ liệu với số reps thực tế chuẩn xác.
+  * **Kết thúc buổi tập:** Phát nhạc chiến thắng (Fanfare), cho chọn mức mệt RPE (1-10) và yêu cầu người dùng nhập số reps thực tế trước khi lưu.
 
 ---
 
@@ -106,13 +106,21 @@ Trên nhánh mới `feature/health-v2-breakthrough-experience`, chúng tôi đã
    * Hàm `calculateStreakDays` sử dụng ngày địa phương (mặc định Asia/Ho_Chi_Minh), tự động loại bỏ các hoạt động có timestamp trong tương lai.
    * Nhận diện chuỗi ngày hiện tại (Current Streak): Nếu không có buổi tập nào hôm nay hoặc hôm qua, streak trả về 0 (chuỗi đã đứt).
    * Nhiều buổi tập trong cùng một ngày địa phương chỉ tính tối đa 1 ngày.
-3. **E4 (Đồng bộ Consent Scope AI):** Bổ sung `'daily_checkins'` và `'blood_pressures'` vào mảng `VALID_CONSENT_SCOPES` trong `src/app/ai/actions.ts`. Người dùng có thể cấp quyền và thu hồi quyền chia sẻ dữ liệu check-in và huyết áp minh bạch.
+3. **E4 (Đồng bộ Consent Scope AI):** Người dùng chọn riêng từng phạm vi dữ liệu, gồm hồ sơ, mục tiêu, hoạt động, chỉ số tự khai, check-in và huyết áp; dữ liệu sức khỏe chỉ được truy vấn khi đã cấp quyền.
 4. **E5 (Khắc phục lệch múi giờ 7 tiếng & Ghi bù Huyết áp):**
    * Xây dựng hàm `toLocalDatetimeInputValue(date)` chuyển đổi Date sang định dạng datetime-local theo giờ máy chuẩn xác.
    * Khi người dùng chỉnh sửa chỉ số mà không đổi ngày giờ, timestamp gốc ISO UTC được bảo toàn nguyên vẹn 100%.
    * Form Huyết áp được bổ sung trường chọn thời điểm đo `measured_at` và nguồn đo `source`, hoàn tất chức năng ghi bù.
-5. **E6 (Trích xuất số reps thực tế cho Live Workout):** `LiveWorkoutModal` trích xuất số reps đơn cụ thể (`match(/\d+/)`), không lưu nguyên chuỗi dải mục tiêu (như `'8–12'`) vào `actual_reps`.
-6. **E7 (Cấu hình Server Actions Body Limit 10MB):** Tạo file cấu hình `next.config.ts` với `serverActions.bodySizeLimit: '10mb'`, loại bỏ giới hạn mặc định 1MB của Next.js 15 và đảm bảo tải tệp dung lượng lớn thành công qua web.
+5. **E6 (Số reps thực tế cho Live Workout):** Không suy ra số thực hiện từ mục tiêu; người dùng nhập reps thực tế trước khi kết quả được lưu.
+6. **E7 (Giới hạn upload trên Vercel):** Server Actions nhận request tối đa 4.5MB; ứng dụng giới hạn file ở 4 MiB để request multipart không vượt giới hạn triển khai.
+
+## Cập nhật sửa lỗi review
+
+- Migration `20261027000008_review_fixes.sql` bổ sung giữ chỗ quota tài liệu có khóa transaction ở database; metadata chỉ chuyển sang `ready` sau khi Storage xác nhận có object. Migration chưa được áp dụng lên database production.
+- Tải tài liệu qua server action, giới hạn file 4 MiB và quota 100 MiB mỗi người; client không còn quyền ghi trực tiếp metadata hoặc object Storage.
+- Passport chỉ chia sẻ qua token ngẫu nhiên có thể thu hồi; đường dẫn cũ dùng user ID không còn công khai hồ sơ.
+- Màn hình consent AI nêu rõ các nhóm dữ liệu được gửi; lịch sử AI lọc reference khi người dùng rút phạm vi.
+- Dashboard và Passport tính ngày theo múi giờ trong hồ sơ sức khỏe. Live Workout chỉ lưu reps do người dùng nhập.
 
 ---
 

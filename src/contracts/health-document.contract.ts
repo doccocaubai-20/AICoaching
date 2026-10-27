@@ -1,12 +1,12 @@
 /**
  * CALISCOACHING - HỢP ĐỒNG TÀI LIỆU SỨC KHỎE (HEALTH DOCUMENT CONTRACT)
  * Quản lý metadata tài liệu y tế, phiếu khám, kết quả xét nghiệm.
- * Giới hạn: tối đa 10 MB/tệp; loại tệp: PDF, JPEG, PNG.
+ * Giới hạn: tối đa 4 MiB/tệp để nằm trong giới hạn payload của Vercel Functions.
  */
 
 import { HealthDocumentFileType } from './database.types';
 
-export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+export const MAX_DOCUMENT_SIZE_BYTES = 4 * 1024 * 1024; // 4 MiB
 export const USER_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024; // 100MB cho mỗi người dùng
 export const ALLOWED_DOCUMENT_MIME_TYPES: HealthDocumentFileType[] = [
   'application/pdf',
@@ -24,6 +24,7 @@ export interface HealthDocumentEntity {
   file_size_bytes: number;
   storage_path: string;
   notes: string | null;
+  upload_status?: 'pending' | 'ready';
   created_at: string;
   updated_at: string;
 }
@@ -58,7 +59,7 @@ export function validateHealthDocumentInput(input: Partial<CreateHealthDocumentI
   if (typeof input.file_size_bytes !== 'number' || input.file_size_bytes <= 0) {
     errors.file_size_bytes = 'Kích thước tệp không hợp lệ.';
   } else if (input.file_size_bytes > MAX_DOCUMENT_SIZE_BYTES) {
-    errors.file_size_bytes = 'Kích thước tệp vượt quá giới hạn 10 MB cho phép.';
+    errors.file_size_bytes = 'Kích thước tệp vượt quá giới hạn 4 MiB cho phép.';
   }
 
   if (!input.storage_path || input.storage_path.trim().length === 0) {
