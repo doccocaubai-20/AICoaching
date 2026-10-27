@@ -11,6 +11,7 @@ import { ProgramHeader } from './ProgramHeader';
 import { SessionCard } from './SessionCard';
 import { SessionResultModal } from './SessionResultModal';
 import { LiveWorkoutModal } from './LiveWorkoutModal';
+import { SkillTreeSection } from './SkillTreeSection';
 import { SessionHistoryList } from './SessionHistoryList';
 import { ReviewSuggestionsSection } from '@/components/review/ReviewSuggestionsSection';
 import { AlertCircle, CalendarCheck2 } from 'lucide-react';
@@ -81,7 +82,10 @@ export function ProgramsManager({
       {/* 1. Header chương trình & cảnh báo thử nghiệm */}
       <ProgramHeader program={program} fetchError={programError} />
 
-      {/* 2. Danh sách các buổi tập trong chương trình mẫu */}
+      {/* 2. Cây Kỹ Năng Calisthenics Nhập Vai RPG (Đột Phá) */}
+      <SkillTreeSection sessionResults={sessionResults} />
+
+      {/* 3. Danh sách các buổi tập trong chương trình mẫu */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
