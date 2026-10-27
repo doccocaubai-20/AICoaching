@@ -24,8 +24,12 @@ interface LiveWorkoutModalProps {
     durationMinutes: number;
     perceivedExertion: number;
     notes: string;
-    completedExercises: Array<{ name: string; sets_completed: number; notes?: string }>;
-  }) => Promise<void>;
+    completedExercises: Array<{
+      exercise_name: string;
+      actual_sets: number;
+      actual_reps: string;
+    }>;
+  }) => Promise<{ success?: boolean; message?: string } | void> | void;
   onClose: () => void;
 }
 
@@ -67,6 +71,7 @@ export function LiveWorkoutModal({
   const [exertion, setExertion] = useState(7);
   const [finishNotes, setFinishNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Stopwatch effect
   useEffect(() => {
@@ -163,22 +168,40 @@ export function LiveWorkoutModal({
 
   const handleSaveWorkout = async () => {
     setIsSubmitting(true);
+    setSaveError(null);
     try {
       const durationMin = Math.max(1, Math.round(totalSeconds / 60));
-      const completedList = exercises.map((ex) => ({
-        name: ex.name,
-        sets_completed: ex.sets,
-        notes: 'Hoàn thành qua Chế độ Live Workout',
-      }));
+      // [E9] Không lưu nguyên dải mục tiêu (ví dụ "8–12") thành actual_reps; trích xuất số reps đơn cụ thể
+      const completedList = exercises.map((ex) => {
+        let repsVal = '10';
+        if (ex.target_reps) {
+          const match = String(ex.target_reps).match(/\d+/);
+          if (match) repsVal = match[0];
+        }
+        return {
+          exercise_name: ex.name,
+          actual_sets: ex.sets,
+          actual_reps: (ex as any).actual_reps || repsVal,
+        };
+      });
 
-      await onFinishWorkout({
+      const res = await onFinishWorkout({
         durationMinutes: durationMin,
         perceivedExertion: exertion,
         notes: finishNotes.trim() || 'Hoàn thành qua Chế độ Live Companion ✨',
         completedExercises: completedList,
       });
+
+      // [E8] Nếu lưu thất bại, giữ lại modal và hiển thị lỗi, KHÔNG gọi onClose()
+      if (res && typeof res === 'object' && 'success' in res && res.success === false) {
+        setSaveError(res.message || 'Lỗi khi lưu kết quả buổi tập. Vui lòng thử lại.');
+        setIsSubmitting(false);
+        return;
+      }
+
       onClose();
-    } catch {
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Lỗi kết nối khi lưu kết quả.');
       setIsSubmitting(false);
     }
   };
@@ -401,6 +424,14 @@ export function LiveWorkoutModal({
                 />
               </div>
             </div>
+
+            {saveError && (
+              <div className="p-3 bg-rose-950/80 border border-rose-600 rounded-xl text-rose-200 text-xs text-left">
+                <p className="font-bold">⚠️ Không thể lưu kết quả:</p>
+                <p className="mt-0.5">{saveError}</p>
+                <p className="mt-1 text-[11px] text-rose-300">Dữ liệu của bạn được giữ nguyên. Vui lòng bấm lưu lại để thử lại.</p>
+              </div>
+            )}
 
             <button
               onClick={handleSaveWorkout}

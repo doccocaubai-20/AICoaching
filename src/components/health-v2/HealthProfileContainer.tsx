@@ -53,6 +53,16 @@ export interface HealthProfileContainerProps {
   documents: HealthDocumentEntity[];
   activities: ActivityEntity[];
   isConfigured: boolean;
+  healthProfileError?: string | null;
+  observationsError?: string | null;
+  bloodPressuresError?: string | null;
+  dailyCheckinsError?: string | null;
+  conditionsError?: string | null;
+  allergiesError?: string | null;
+  medicationsError?: string | null;
+  healthEventsError?: string | null;
+  documentsError?: string | null;
+  activitiesError?: string | null;
 }
 
 export function HealthProfileContainer({
@@ -74,8 +84,35 @@ export function HealthProfileContainer({
   documents,
   activities,
   isConfigured,
+  healthProfileError,
+  observationsError,
+  bloodPressuresError,
+  dailyCheckinsError,
+  conditionsError,
+  allergiesError,
+  medicationsError,
+  healthEventsError,
+  documentsError,
+  activitiesError,
 }: HealthProfileContainerProps) {
   const [activeTab, setActiveTab] = useState<string>('overview');
+
+  const errorList = [
+    profileError,
+    goalsError,
+    healthProfileError,
+    observationsError,
+    bloodPressuresError,
+    dailyCheckinsError,
+    conditionsError,
+    allergiesError,
+    medicationsError,
+    healthEventsError,
+    documentsError,
+    activitiesError,
+  ].filter(Boolean) as string[];
+
+  const hasAnyErrors = errorList.length > 0;
 
   const tabs = [
     { key: 'overview', label: 'Tổng quan', icon: Activity },
@@ -106,6 +143,29 @@ export function HealthProfileContainer({
         </p>
       </div>
 
+      {/* Cảnh báo lỗi tải dữ liệu (E3) */}
+      {hasAnyErrors && (
+        <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-xs text-rose-800 dark:text-rose-200 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-bold flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-rose-600" />
+              <span>Đã xảy ra lỗi khi tải một số dữ liệu hồ sơ:</span>
+            </span>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-2.5 py-1 bg-rose-600 text-white font-semibold rounded-lg hover:bg-rose-700 transition"
+            >
+              Tải lại trang
+            </button>
+          </div>
+          <ul className="list-disc list-inside text-[11px] space-y-0.5 opacity-90 pl-1">
+            {errorList.map((err, i) => (
+              <li key={i}>{err}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Thanh Tabs cuộn mượt mà trên Mobile */}
       <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
         <div className="flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2 min-w-max">
@@ -135,6 +195,7 @@ export function HealthProfileContainer({
         {activeTab === 'overview' && (
           <HealthOverviewTab
             healthProfile={healthProfile}
+            healthProfileError={healthProfileError}
             observations={observations}
             bloodPressures={bloodPressures}
             dailyCheckins={dailyCheckins}

@@ -41,19 +41,19 @@ export function QuickCheckinWidget({
   isConfigured,
 }: QuickCheckinWidgetProps) {
   const [isEditing, setIsEditing] = useState(!todayCheckin);
-  const [sleepHours, setSleepHours] = useState<number>(
-    todayCheckin?.sleep_duration_minutes
+  const [sleepHours, setSleepHours] = useState<number | null>(
+    todayCheckin?.sleep_duration_minutes != null
       ? Math.round((todayCheckin.sleep_duration_minutes / 60) * 10) / 10
-      : 7.5
+      : null
   );
-  const [sleepQuality, setSleepQuality] = useState<number>(
-    todayCheckin?.sleep_quality || 4
+  const [sleepQuality, setSleepQuality] = useState<number | null>(
+    todayCheckin?.sleep_quality ?? null
   );
-  const [energyLevel, setEnergyLevel] = useState<number>(
-    todayCheckin?.energy_level || 3
+  const [energyLevel, setEnergyLevel] = useState<number | null>(
+    todayCheckin?.energy_level ?? null
   );
-  const [stressLevel, setStressLevel] = useState<number>(
-    todayCheckin?.stress_level || 2
+  const [stressLevel, setStressLevel] = useState<number | null>(
+    todayCheckin?.stress_level ?? null
   );
   const [notes, setNotes] = useState<string>(todayCheckin?.notes || '');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -69,7 +69,7 @@ export function QuickCheckinWidget({
       setStatusMessage(null);
       const res = await upsertDailyCheckinAction({
         local_date: todayDateStr,
-        sleep_duration_minutes: Math.round(sleepHours * 60),
+        sleep_duration_minutes: sleepHours != null ? Math.round(sleepHours * 60) : null,
         sleep_quality: sleepQuality,
         energy_level: energyLevel,
         stress_level: stressLevel,
@@ -196,20 +196,32 @@ export function QuickCheckinWidget({
             <Moon className="w-3.5 h-3.5 text-indigo-300" />
             <span>Thời lượng ngủ:</span>
           </span>
-          <span className="font-extrabold text-amber-300 text-sm">
-            {sleepHours} tiếng
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-extrabold text-amber-300 text-sm">
+              {sleepHours != null ? `${sleepHours} tiếng` : 'Chưa nhập (tùy chọn)'}
+            </span>
+            {sleepHours != null && (
+              <button
+                type="button"
+                onClick={() => setSleepHours(null)}
+                className="text-[10px] text-indigo-200 hover:text-white underline"
+              >
+                Xóa
+              </button>
+            )}
+          </div>
         </div>
         <input
           type="range"
-          min="4"
+          min="0"
           max="12"
           step="0.5"
-          value={sleepHours}
+          value={sleepHours ?? 0}
           onChange={(e) => setSleepHours(parseFloat(e.target.value))}
           className="w-full accent-amber-400 cursor-pointer h-2 bg-white/20 rounded-lg appearance-none"
         />
         <div className="flex justify-between text-[10px] text-indigo-300">
+          <span>0h</span>
           <span>4h (Thiếu ngủ)</span>
           <span>7 - 8h (Tối ưu)</span>
           <span>12h</span>
@@ -223,7 +235,7 @@ export function QuickCheckinWidget({
           <div className="text-[11px] font-semibold text-indigo-100 flex items-center justify-between">
             <span>Chất lượng giấc ngủ:</span>
             <span className="text-amber-300 font-bold">
-              {SLEEP_EMOJIS.find((e) => e.val === sleepQuality)?.label}
+              {sleepQuality ? SLEEP_EMOJIS.find((e) => e.val === sleepQuality)?.label : 'Chưa chọn'}
             </span>
           </div>
           <div className="grid grid-cols-5 gap-1.5">
@@ -231,7 +243,7 @@ export function QuickCheckinWidget({
               <button
                 key={item.val}
                 type="button"
-                onClick={() => setSleepQuality(item.val)}
+                onClick={() => setSleepQuality((prev) => (prev === item.val ? null : item.val))}
                 className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition ${
                   sleepQuality === item.val
                     ? 'bg-white text-indigo-950 font-bold shadow-md scale-105'
@@ -250,7 +262,7 @@ export function QuickCheckinWidget({
           <div className="text-[11px] font-semibold text-indigo-100 flex items-center justify-between">
             <span>Mức năng lượng cơ thể:</span>
             <span className="text-amber-300 font-bold">
-              {ENERGY_EMOJIS.find((e) => e.val === energyLevel)?.label}
+              {energyLevel ? ENERGY_EMOJIS.find((e) => e.val === energyLevel)?.label : 'Chưa chọn'}
             </span>
           </div>
           <div className="grid grid-cols-5 gap-1.5">
@@ -258,7 +270,7 @@ export function QuickCheckinWidget({
               <button
                 key={item.val}
                 type="button"
-                onClick={() => setEnergyLevel(item.val)}
+                onClick={() => setEnergyLevel((prev) => (prev === item.val ? null : item.val))}
                 className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition ${
                   energyLevel === item.val
                     ? 'bg-white text-indigo-950 font-bold shadow-md scale-105'
@@ -277,7 +289,7 @@ export function QuickCheckinWidget({
           <div className="text-[11px] font-semibold text-indigo-100 flex items-center justify-between">
             <span>Mức căng thẳng (Stress):</span>
             <span className="text-amber-300 font-bold">
-              {STRESS_EMOJIS.find((e) => e.val === stressLevel)?.label}
+              {stressLevel ? STRESS_EMOJIS.find((e) => e.val === stressLevel)?.label : 'Chưa chọn'}
             </span>
           </div>
           <div className="grid grid-cols-5 gap-1.5">
@@ -285,7 +297,7 @@ export function QuickCheckinWidget({
               <button
                 key={item.val}
                 type="button"
-                onClick={() => setStressLevel(item.val)}
+                onClick={() => setStressLevel((prev) => (prev === item.val ? null : item.val))}
                 className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition ${
                   stressLevel === item.val
                     ? 'bg-white text-indigo-950 font-bold shadow-md scale-105'

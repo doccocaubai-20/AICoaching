@@ -7,6 +7,7 @@
 import { HealthDocumentFileType } from './database.types';
 
 export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+export const USER_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024; // 100MB cho mỗi người dùng
 export const ALLOWED_DOCUMENT_MIME_TYPES: HealthDocumentFileType[] = [
   'application/pdf',
   'image/jpeg',

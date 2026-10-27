@@ -35,6 +35,13 @@ import {
   validateHealthDocumentInput,
   ConditionStatus,
   MedicationStatus,
+  validateObservationInput,
+  MetricType,
+  ObservationSource,
+  MAX_DOCUMENT_SIZE_BYTES,
+  USER_STORAGE_QUOTA_BYTES,
+  ALLOWED_DOCUMENT_MIME_TYPES,
+  HealthDocumentFileType,
 } from '@/contracts';
 
 export interface ActionResult<T = unknown> {
@@ -518,39 +525,212 @@ export async function deleteHealthEventAction(id: string): Promise<ActionResult>
 }
 
 export async function createHealthDocumentAction(
-  input: CreateHealthDocumentInput
+  _input: CreateHealthDocumentInput
 ): Promise<ActionResult<HealthDocumentEntity>> {
+  // [S3] Từ chối việc chèn metadata thủ công tùy ý từ client mà không qua luồng upload kiểm soát
+  // Toàn bộ tài liệu y tế bắt buộc phải tải lên qua uploadHealthDocumentAction để đảm bảo file tồn tại và đúng chủ sở hữu
+  return {
+    success: false,
+    message: 'Không cho phép tạo bản ghi tài liệu tùy ý. Vui lòng tải tài liệu lên qua luồng upload kiểm soát.',
+  };
+}
+
+const userUploadQueues = new Map<string, Promise<unknown>>();
+
+async function runWithUserUploadLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  const previous = userUploadQueues.get(userId) || Promise.resolve();
+  let release: () => void = () => {};
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  userUploadQueues.set(userId, next);
+
+  await previous.catch(() => {});
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (userUploadQueues.get(userId) === next) {
+      userUploadQueues.delete(userId);
+    }
+  }
+}
+
+export async function uploadHealthDocumentAction(formData: FormData): Promise<ActionResult<HealthDocumentEntity>> {
   try {
     const { user } = await requireAuthenticatedUser();
     const supabase = await createServerSupabaseClient();
     if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
 
-    const validation = validateHealthDocumentInput(input);
-    if (!validation.is_valid) {
-      return { success: false, message: 'Thông tin tài liệu không hợp lệ.', errors: validation.errors };
+    const file = formData.get('file') as File | null;
+    if (!file || typeof file === 'string' || file.size === 0) {
+      return { success: false, message: 'Vui lòng chọn tệp tài liệu hợp lệ.' };
     }
 
-    const { data, error } = await supabase
+    // 1. Kiểm tra kích thước tệp (tối đa 10MB)
+    if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
+      return { success: false, message: 'Kích thước tệp vượt quá giới hạn 10MB.' };
+    }
+
+    // 2. Kiểm tra định dạng MIME
+    const mimeType = file.type as HealthDocumentFileType;
+    if (!ALLOWED_DOCUMENT_MIME_TYPES.includes(mimeType)) {
+      return { success: false, message: 'Định dạng tệp không được hỗ trợ. Chỉ chấp nhận PDF, JPEG, PNG.' };
+    }
+
+    // 3. [S1] Sử dụng khóa tuần tự hóa theo người dùng để ngăn chặn hoàn toàn race condition quota đồng thời
+    return await runWithUserUploadLock(user.id, async () => {
+      const { data: existingDocs, error: quotaErr } = await supabase
+        .from('health_documents')
+        .select('file_size_bytes')
+        .eq('user_id', user.id);
+
+      if (quotaErr) {
+        return { success: false, message: 'Không thể kiểm tra dung lượng tài khoản: ' + quotaErr.message };
+      }
+
+      const currentUsage = (existingDocs || []).reduce((acc, d) => acc + (d.file_size_bytes || 0), 0);
+      if (currentUsage + file.size > USER_STORAGE_QUOTA_BYTES) {
+        return { success: false, message: 'Vượt quá hạn mức lưu trữ tài liệu y tế (100MB/người dùng).' };
+      }
+
+      // 4. Kiểm tra magic bytes
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let isValidContent = false;
+      if (mimeType === 'application/pdf') {
+        isValidContent = bytes.length >= 5 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2D;
+      } else if (mimeType === 'image/png') {
+        isValidContent = bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47;
+      } else if (mimeType === 'image/jpeg') {
+        isValidContent = bytes.length >= 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF;
+      }
+
+      if (!isValidContent) {
+        return { success: false, message: 'Nội dung tệp không khớp với định dạng tệp đã chọn.' };
+      }
+
+      // 5. Kiểm tra event_id nếu có
+      const rawEventId = formData.get('event_id') as string | null;
+      const eventId = rawEventId && rawEventId.trim().length > 0 ? rawEventId.trim() : null;
+      if (eventId) {
+        const { data: event, error: eventErr } = await supabase
+          .from('health_events')
+          .select('id')
+          .eq('id', eventId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (eventErr || !event) {
+          return { success: false, message: 'Sự kiện y tế không tồn tại hoặc không thuộc quyền sở hữu của bạn.' };
+        }
+      }
+
+      // 6. Tạo đường dẫn an toàn do Server kiểm soát
+      const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const randomUuid = crypto.randomUUID();
+      const storagePath = `${user.id}/${randomUuid}-${sanitizedName}`;
+      const rawTitle = (formData.get('title') as string) || file.name;
+      const rawNotes = formData.get('notes') as string | null;
+
+      // 7. [S2] Lưu metadata vào DB trước để giữ chỗ bền vững
+      // Nếu bước này lỗi, file CHƯA upload lên storage nên không bao giờ tạo tệp mồ côi
+      const { data: newDoc, error: insertError } = await supabase
+        .from('health_documents')
+        .insert({
+          user_id: user.id,
+          event_id: eventId,
+          title: rawTitle.trim(),
+          file_name: file.name,
+          file_type: mimeType,
+          file_size_bytes: file.size,
+          storage_path: storagePath,
+          notes: rawNotes?.trim() || null,
+        })
+        .select('*')
+        .single();
+
+      if (insertError) {
+        return { success: false, message: 'Lỗi lưu thông tin tài liệu: ' + insertError.message };
+      }
+
+      // 8. Upload file lên private bucket sau khi metadata đã được giữ chỗ
+      const { error: uploadError } = await supabase.storage
+        .from('health_documents')
+        .upload(storagePath, arrayBuffer, {
+          contentType: file.type,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        // Dọn dẹp metadata nếu upload storage thất bại
+        await supabase.from('health_documents').delete().eq('storage_path', storagePath);
+        return { success: false, message: 'Lỗi tải tệp lên kho lưu trữ: ' + uploadError.message };
+      }
+
+      revalidatePath('/profile');
+      revalidatePath('/health');
+      return { success: true, message: 'Tải tài liệu lên thành công.', data: newDoc as HealthDocumentEntity };
+    });
+  } catch (err: unknown) {
+    return { success: false, message: err instanceof Error ? err.message : 'Lỗi hệ thống' };
+  }
+}
+
+export async function getHealthDocumentSignedUrlAction(id: string): Promise<ActionResult<{ signedUrl: string }>> {
+  try {
+    const { user } = await requireAuthenticatedUser();
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
+
+    const { data: doc, error: docError } = await supabase
       .from('health_documents')
-      .insert({
-        user_id: user.id,
-        event_id: input.event_id || null,
-        title: input.title.trim(),
-        file_name: input.file_name.trim(),
-        file_type: input.file_type,
-        file_size_bytes: input.file_size_bytes,
-        storage_path: input.storage_path.trim(),
-        notes: input.notes?.trim() || null,
-      })
-      .select('*')
-      .single();
+      .select('storage_path')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (docError || !doc) {
+      return { success: false, message: 'Không tìm thấy tài liệu hoặc không có quyền truy cập.' };
+    }
+
+    const { data, error: signError } = await supabase.storage
+      .from('health_documents')
+      .createSignedUrl(doc.storage_path, 300); // 5 phút
+
+    if (signError || !data?.signedUrl) {
+      return { success: false, message: 'Không thể tạo liên kết truy cập tài liệu: ' + (signError?.message || '') };
+    }
+
+    return { success: true, data: { signedUrl: data.signedUrl } };
+  } catch (err: unknown) {
+    return { success: false, message: err instanceof Error ? err.message : 'Lỗi hệ thống' };
+  }
+}
+
+export async function renameHealthDocumentAction(id: string, newTitle: string): Promise<ActionResult> {
+  try {
+    const { user } = await requireAuthenticatedUser();
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
+
+    if (!newTitle || newTitle.trim().length === 0) {
+      return { success: false, message: 'Tiêu đề tài liệu không được để trống.' };
+    }
+
+    const { error } = await supabase
+      .from('health_documents')
+      .update({ title: newTitle.trim() })
+      .eq('id', id)
+      .eq('user_id', user.id);
 
     if (error) {
-      return { success: false, message: `Lỗi lưu metadata tài liệu: ${error.message}` };
+      return { success: false, message: 'Lỗi đổi tên tài liệu: ' + error.message };
     }
 
-    revalidatePath('/profile'); revalidatePath('/health'); revalidatePath('/dashboard');
-    return { success: true, message: 'Đã lưu tài liệu thành công.', data: data as HealthDocumentEntity };
+    revalidatePath('/profile');
+    revalidatePath('/health');
+    return { success: true, message: 'Đổi tên tài liệu thành công.' };
   } catch (err: unknown) {
     return { success: false, message: err instanceof Error ? err.message : 'Lỗi hệ thống' };
   }
@@ -563,19 +743,33 @@ export async function deleteHealthDocumentAction(id: string): Promise<ActionResu
     if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
 
     // 1. Lấy thông tin tài liệu để lấy storage_path
-    const { data: doc } = await supabase
+    const { data: doc, error: docError } = await supabase
       .from('health_documents')
       .select('storage_path')
       .eq('id', id)
       .eq('user_id', user.id)
       .maybeSingle();
 
-    if (doc?.storage_path) {
-      // 2. Thử xóa tệp từ storage
-      await supabase.storage.from('health_documents').remove([doc.storage_path]);
+    if (docError) {
+      return { success: false, message: 'Lỗi truy vấn tài liệu: ' + docError.message };
+    }
+    if (!doc) {
+      return { success: false, message: 'Tài liệu không tồn tại hoặc đã bị xóa.' };
     }
 
-    // 3. Xóa bản ghi trong database
+    if (doc.storage_path) {
+      // 2. Thử xóa tệp từ storage
+      const { error: storageError } = await supabase.storage.from('health_documents').remove([doc.storage_path]);
+      if (storageError) {
+        // [S3] XÓA FILE LỖI: KHÔNG ĐƯỢC XÓA METADATA VÀ KHÔNG BÁO THÀNH CÔNG!
+        return {
+          success: false,
+          message: 'Không thể xóa tệp trên hệ thống lưu trữ: ' + storageError.message,
+        };
+      }
+    }
+
+    // 3. Xóa bản ghi trong database chỉ khi file storage đã được xóa thành công
     const { error } = await supabase
       .from('health_documents')
       .delete()
@@ -595,12 +789,14 @@ export async function deleteHealthDocumentAction(id: string): Promise<ActionResu
 
 
 // ==============================================================================
-// 8. CHỈ SỐ THỂ CHẤT TRỰC TIẾP (OBSERVATION DIRECT ACTION)
+// 8. CHỈ SỐ THỂ CHẤT TRỰC TIẾP (OBSERVATIONS ACTIONS)
 // ==============================================================================
 export async function addObservationDirectAction(input: {
-  metric_type: any;
+  metric_type: MetricType;
   metric_value: number;
   metric_unit: string;
+  observed_at?: string;
+  source?: ObservationSource;
   notes?: string | null;
 }): Promise<ActionResult> {
   try {
@@ -608,13 +804,24 @@ export async function addObservationDirectAction(input: {
     const supabase = await createServerSupabaseClient();
     if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
 
+    // [S4] Bắt buộc validation qua hợp đồng
+    const validation = validateObservationInput(input);
+    if (!validation.is_valid) {
+      return {
+        success: false,
+        message: Object.values(validation.errors).join(' '),
+        errors: validation.errors,
+      };
+    }
+
     const { error } = await supabase.from('observations').insert({
       user_id: user.id,
       metric_type: input.metric_type,
       metric_value: input.metric_value,
-      metric_unit: input.metric_unit,
+      metric_unit: input.metric_unit.trim(),
+      observed_at: input.observed_at || new Date().toISOString(),
       notes: input.notes?.trim() || null,
-      source: 'self_reported',
+      source: input.source || 'self_reported',
     });
 
     if (error) {
@@ -622,9 +829,119 @@ export async function addObservationDirectAction(input: {
     }
 
     revalidatePath('/profile');
+    revalidatePath('/health');
     revalidatePath('/dashboard');
     return { success: true, message: 'Đã lưu chỉ số thành công.' };
   } catch (err: unknown) {
     return { success: false, message: err instanceof Error ? err.message : 'Lỗi hệ thống' };
   }
 }
+
+export async function updateObservationAction(
+  id: string,
+  input: {
+    metric_value: number;
+    metric_unit: string;
+    observed_at?: string;
+    source?: ObservationSource;
+    notes?: string | null;
+  }
+): Promise<ActionResult> {
+  try {
+    const { user } = await requireAuthenticatedUser();
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
+
+    if (typeof input.metric_value !== 'number' || isNaN(input.metric_value) || input.metric_value <= 0) {
+      return { success: false, message: 'Giá trị chỉ số phải là số dương lớn hơn 0.' };
+    }
+    if (!input.metric_unit || input.metric_unit.trim().length === 0) {
+      return { success: false, message: 'Đơn vị chỉ số không được để trống.' };
+    }
+
+    const updatePayload: {
+      metric_value: number;
+      metric_unit: string;
+      notes: string | null;
+      observed_at?: string;
+      source?: ObservationSource;
+    } = {
+      metric_value: input.metric_value,
+      metric_unit: input.metric_unit.trim(),
+      notes: input.notes?.trim() || null,
+    };
+    if (input.observed_at) updatePayload.observed_at = input.observed_at;
+    if (input.source) updatePayload.source = input.source;
+
+    const { error } = await supabase
+      .from('observations')
+      .update(updatePayload)
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) {
+      return { success: false, message: `Lỗi cập nhật chỉ số: ${error.message}` };
+    }
+
+    revalidatePath('/profile');
+    revalidatePath('/health');
+    revalidatePath('/dashboard');
+    return { success: true, message: 'Đã cập nhật chỉ số thành công.' };
+  } catch (err: unknown) {
+    return { success: false, message: err instanceof Error ? err.message : 'Lỗi hệ thống' };
+  }
+}
+
+export async function updateBloodPressureAction(
+  id: string,
+  input: {
+    systolic: number;
+    diastolic: number;
+    measured_at?: string;
+    source?: ObservationSource;
+    notes?: string | null;
+  }
+): Promise<ActionResult> {
+  try {
+    const { user } = await requireAuthenticatedUser();
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
+
+    const validation = validateBloodPressureInput(input);
+    if (!validation.is_valid) {
+      return { success: false, message: Object.values(validation.errors).join(' '), errors: validation.errors };
+    }
+
+    const updatePayload: {
+      systolic: number;
+      diastolic: number;
+      notes: string | null;
+      measured_at?: string;
+      source?: ObservationSource;
+    } = {
+      systolic: input.systolic,
+      diastolic: input.diastolic,
+      notes: input.notes?.trim() || null,
+    };
+    if (input.measured_at) updatePayload.measured_at = input.measured_at;
+    if (input.source) updatePayload.source = input.source;
+
+    const { error } = await supabase
+      .from('blood_pressure_readings')
+      .update(updatePayload)
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) {
+      return { success: false, message: `Lỗi cập nhật huyết áp: ${error.message}` };
+    }
+
+    revalidatePath('/profile');
+    revalidatePath('/health');
+    revalidatePath('/dashboard');
+    return { success: true, message: 'Đã cập nhật huyết áp thành công.' };
+  } catch (err: unknown) {
+    return { success: false, message: err instanceof Error ? err.message : 'Lỗi hệ thống' };
+  }
+}
+

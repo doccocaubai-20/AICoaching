@@ -43,6 +43,8 @@ export function ProgramsManager({
   const [selectedSession, setSelectedSession] = useState<SessionEntity | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [liveSession, setLiveSession] = useState<SessionEntity | null>(null);
+  // [E10] Khóa idempotency ổn định cho một lượt tập (tái sử dụng khi retry)
+  const [liveIdempotencyKey, setLiveIdempotencyKey] = useState<string>(() => crypto.randomUUID());
 
   const handleOpenRecord = (session: SessionEntity) => {
     setSelectedSession(session);
@@ -56,25 +58,33 @@ export function ProgramsManager({
 
   const handleStartLive = (session: SessionEntity) => {
     setLiveSession(session);
+    setLiveIdempotencyKey(crypto.randomUUID());
   };
 
   const handleFinishLiveWorkout = async (data: {
     durationMinutes: number;
     perceivedExertion: number;
     notes: string;
-    completedExercises: Array<{ name: string; sets_completed: number; notes?: string }>;
+    completedExercises: Array<unknown>;
+    idempotencyKey?: string;
   }) => {
-    if (!liveSession) return;
+    if (!liveSession) return { success: false, message: 'Không tìm thấy buổi tập.' };
     const formData = new FormData();
     formData.append('session_id', liveSession.id);
     formData.append('completed_at', new Date().toISOString());
     formData.append('duration_minutes', String(data.durationMinutes));
     formData.append('perceived_exertion', String(data.perceivedExertion));
     formData.append('notes', data.notes);
-    formData.append('idempotency_key', crypto.randomUUID());
+    // [E10] Dùng chung idempotency_key qua các lần gọi lại của cùng lượt tập
+    formData.append('idempotency_key', data.idempotencyKey || liveIdempotencyKey);
     formData.append('completed_exercises', JSON.stringify(data.completedExercises));
 
-    await recordSessionResultAction(null, formData);
+    const res = await recordSessionResultAction(null, formData);
+    if (res?.success) {
+      // Chỉ sinh khóa mới khi đã ghi nhận thành công
+      setLiveIdempotencyKey(crypto.randomUUID());
+    }
+    return res;
   };
 
   return (
@@ -83,7 +93,7 @@ export function ProgramsManager({
       <ProgramHeader program={program} fetchError={programError} />
 
       {/* 2. Cây Kỹ Năng Calisthenics Nhập Vai RPG (Đột Phá) */}
-      <SkillTreeSection sessionResults={sessionResults} />
+      <SkillTreeSection sessionResults={sessionResults} fetchError={resultsError} />
 
       {/* 3. Danh sách các buổi tập trong chương trình mẫu */}
       <div className="space-y-3">

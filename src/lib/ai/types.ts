@@ -18,7 +18,7 @@ import {
 export type AIProviderType = 'google' | 'mock';
 
 export interface AIReferenceSourceItem {
-  type: 'goal' | 'activity' | 'observation' | 'profile';
+  type: 'goal' | 'activity' | 'observation' | 'profile' | 'checkin' | 'blood_pressure';
   id: string;
   description?: string;
 }
@@ -81,6 +81,28 @@ export interface AIContextPayload {
     metric_unit: string;
     observed_at: string;
     source: ObservationSource;
+  }>;
+  daily_checkins?: Array<{
+    id: string;
+    local_date: string;
+    sleep_duration_minutes: number | null;
+    sleep_quality: number | null;
+    energy_level: number | null;
+    stress_level: number | null;
+  }>;
+  daily_checkins_summary?: {
+    recorded_days: number;
+    average_sleep_minutes: number | null;
+    average_energy: number | null;
+    average_stress: number | null;
+    summary_text: string;
+  };
+  blood_pressures?: Array<{
+    id: string;
+    systolic: number;
+    diastolic: number;
+    measured_at: string;
+    source: string;
   }>;
   review_suggestions?: Array<{
     id: string;

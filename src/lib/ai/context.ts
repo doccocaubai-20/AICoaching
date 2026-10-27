@@ -11,6 +11,9 @@ import {
   ObservationEntity,
   ReviewSuggestionEntity,
   ConsentScopeItem,
+  DailyCheckinEntity,
+  BloodPressureEntity,
+  computeCheckinWeeklyStats,
 } from '@/contracts';
 import { AIContextPayload, AIReferenceSourceItem } from './types';
 import { formatDateVN } from '@/components/dashboard/date-utils';
@@ -21,6 +24,8 @@ export interface BuildAIContextInput {
   activities?: ActivityEntity[];
   observations?: ObservationEntity[];
   reviewSuggestions?: ReviewSuggestionEntity[];
+  dailyCheckins?: DailyCheckinEntity[];
+  bloodPressures?: BloodPressureEntity[];
   dateWindow?: {
     from: string;
     to: string;
@@ -136,11 +141,66 @@ export function buildAIContext(input: BuildAIContextInput): {
         })
     : [];
 
+  // 6. Sinh hoạt & Giấc ngủ V2 (E7): chỉ lấy khi scope có 'daily_checkins'
+  let daily_checkins: AIContextPayload['daily_checkins'] = undefined;
+  let daily_checkins_summary: AIContextPayload['daily_checkins_summary'] = undefined;
+
+  if (effectiveScope.includes('daily_checkins') && input.dailyCheckins) {
+    const fromDateStr = new Date(fromTime).toISOString().slice(0, 10);
+    const toDateStr = new Date(toTime).toISOString().slice(0, 10);
+
+    const filteredCheckins = input.dailyCheckins.filter(
+      (c) => c.local_date && c.local_date >= fromDateStr && c.local_date <= toDateStr
+    );
+
+    filteredCheckins.forEach((c) => allowedRecordIds.add(c.id));
+
+    daily_checkins = filteredCheckins.map((c) => ({
+      id: c.id,
+      local_date: c.local_date,
+      sleep_duration_minutes: c.sleep_duration_minutes,
+      sleep_quality: c.sleep_quality,
+      energy_level: c.energy_level,
+      stress_level: c.stress_level,
+    }));
+
+    const stats = computeCheckinWeeklyStats(filteredCheckins);
+    daily_checkins_summary = {
+      recorded_days: stats.totalRecordedDays,
+      average_sleep_minutes: stats.averageSleepMinutes,
+      average_energy: stats.averageEnergy,
+      average_stress: stats.averageStress,
+      summary_text: stats.summaryText,
+    };
+  }
+
+  // 7. Huyết áp V2 (E7): chỉ lấy khi scope có 'blood_pressures'
+  let blood_pressures: AIContextPayload['blood_pressures'] = undefined;
+  if (effectiveScope.includes('blood_pressures') && input.bloodPressures) {
+    const filteredBP = input.bloodPressures.filter((b) => {
+      const t = new Date(b.measured_at).getTime();
+      return !isNaN(t) && t >= fromTime && t <= toTime;
+    });
+
+    filteredBP.forEach((b) => allowedRecordIds.add(b.id));
+
+    blood_pressures = filteredBP.map((b) => ({
+      id: b.id,
+      systolic: b.systolic,
+      diastolic: b.diastolic,
+      measured_at: formatDateVN(b.measured_at),
+      source: b.source,
+    }));
+  }
+
   const context: AIContextPayload = {
     profile,
     goals,
     activities,
     observations,
+    daily_checkins,
+    daily_checkins_summary,
+    blood_pressures,
     review_suggestions: reviewSuggestions.length > 0 ? reviewSuggestions : undefined,
     date_window: {
       from: formatDateVN(dateFrom),

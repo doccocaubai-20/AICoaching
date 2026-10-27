@@ -4,65 +4,68 @@ import React, { useState } from 'react';
 import { Moon, Sun, BatteryCharging, Zap, AlertTriangle, Calendar, Check, Clock, Dumbbell } from 'lucide-react';
 import { DailyCheckinEntity, ActivityEntity } from '@/contracts';
 import { upsertDailyCheckinAction, deleteDailyCheckinAction } from '@/lib/server/health-profile-actions';
+import { getLocalDateString } from '@/lib/date-utils';
 
 interface DailyCheckinTabProps {
   dailyCheckins: DailyCheckinEntity[];
   activities: ActivityEntity[];
+  timezone?: string;
 }
 
-export function DailyCheckinTab({ dailyCheckins, activities }: DailyCheckinTabProps) {
-  // Mặc định ngày hôm nay theo giờ địa phương YYYY-MM-DD
-  const todayStr = new Date().toISOString().split('T')[0];
+export function DailyCheckinTab({ dailyCheckins, activities, timezone }: DailyCheckinTabProps) {
+  const userTz = timezone || 'Asia/Ho_Chi_Minh';
+  // Mặc định ngày hôm nay theo giờ địa phương chuẩn xác (E5)
+  const todayStr = getLocalDateString(new Date(), userTz);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
 
   // Tìm bản ghi của ngày đang chọn (nếu đã có)
   const existingCheckin = dailyCheckins.find((c) => c.local_date === selectedDate);
 
-  // Form states
+  // [S5] Form states: giữ null khi chưa có dữ liệu, KHÔNG tự ý gán số giả định
   const [sleepHours, setSleepHours] = useState<string>(
-    existingCheckin?.sleep_duration_minutes
+    existingCheckin?.sleep_duration_minutes != null
       ? Math.floor(existingCheckin.sleep_duration_minutes / 60).toString()
-      : '7'
+      : ''
   );
   const [sleepMins, setSleepMins] = useState<string>(
-    existingCheckin?.sleep_duration_minutes
+    existingCheckin?.sleep_duration_minutes != null
       ? (existingCheckin.sleep_duration_minutes % 60).toString()
-      : '0'
+      : ''
   );
-  const [sleepQuality, setSleepQuality] = useState<number>(existingCheckin?.sleep_quality || 4);
-  const [energyLevel, setEnergyLevel] = useState<number>(existingCheckin?.energy_level || 3);
-  const [stressLevel, setStressLevel] = useState<number>(existingCheckin?.stress_level || 2);
+  const [sleepQuality, setSleepQuality] = useState<number | null>(existingCheckin?.sleep_quality ?? null);
+  const [energyLevel, setEnergyLevel] = useState<number | null>(existingCheckin?.energy_level ?? null);
+  const [stressLevel, setStressLevel] = useState<number | null>(existingCheckin?.stress_level ?? null);
   const [notes, setNotes] = useState<string>(existingCheckin?.notes || '');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Khi người dùng đổi ngày, cập nhật form theo ngày đó
+  // Khi người dùng đổi ngày, cập nhật form theo đúng dữ liệu của ngày đó hoặc giữ trống
   const handleDateChange = (newDate: string) => {
     setSelectedDate(newDate);
     const checkin = dailyCheckins.find((c) => c.local_date === newDate);
     if (checkin) {
-      setSleepHours(checkin.sleep_duration_minutes ? Math.floor(checkin.sleep_duration_minutes / 60).toString() : '7');
-      setSleepMins(checkin.sleep_duration_minutes ? (checkin.sleep_duration_minutes % 60).toString() : '0');
-      setSleepQuality(checkin.sleep_quality || 4);
-      setEnergyLevel(checkin.energy_level || 3);
-      setStressLevel(checkin.stress_level || 2);
+      setSleepHours(checkin.sleep_duration_minutes != null ? Math.floor(checkin.sleep_duration_minutes / 60).toString() : '');
+      setSleepMins(checkin.sleep_duration_minutes != null ? (checkin.sleep_duration_minutes % 60).toString() : '');
+      setSleepQuality(checkin.sleep_quality ?? null);
+      setEnergyLevel(checkin.energy_level ?? null);
+      setStressLevel(checkin.stress_level ?? null);
       setNotes(checkin.notes || '');
     } else {
-      setSleepHours('7');
-      setSleepMins('0');
-      setSleepQuality(4);
-      setEnergyLevel(3);
-      setStressLevel(2);
+      setSleepHours('');
+      setSleepMins('');
+      setSleepQuality(null);
+      setEnergyLevel(null);
+      setStressLevel(null);
       setNotes('');
     }
     setStatusMessage(null);
   };
 
-  // Các hoạt động thể chất đã diễn ra trong ngày được chọn
+  // Các hoạt động thể chất đã diễn ra trong ngày được chọn theo giờ địa phương
   const dayActivities = activities.filter((a) => {
     if (!a.start_at || a.is_planned) return false;
-    const actDateStr = new Date(a.start_at).toISOString().split('T')[0];
+    const actDateStr = getLocalDateString(new Date(a.start_at), userTz);
     return actDateStr === selectedDate;
   });
 
@@ -71,13 +74,20 @@ export function DailyCheckinTab({ dailyCheckins, activities }: DailyCheckinTabPr
     setIsSubmitting(true);
     setStatusMessage(null);
 
-    const h = parseInt(sleepHours || '0', 10);
-    const m = parseInt(sleepMins || '0', 10);
-    const totalMinutes = h * 60 + m;
+    const hasH = sleepHours.trim() !== '';
+    const hasM = sleepMins.trim() !== '';
+    let totalMinutes: number | null = null;
+    if (hasH || hasM) {
+      const h = hasH ? parseInt(sleepHours, 10) : 0;
+      const m = hasM ? parseInt(sleepMins, 10) : 0;
+      if (!isNaN(h) && !isNaN(m)) {
+        totalMinutes = h * 60 + m;
+      }
+    }
 
     const res = await upsertDailyCheckinAction({
       local_date: selectedDate,
-      sleep_duration_minutes: totalMinutes > 0 ? totalMinutes : null,
+      sleep_duration_minutes: totalMinutes,
       sleep_quality: sleepQuality,
       energy_level: energyLevel,
       stress_level: stressLevel,
@@ -166,9 +176,10 @@ export function DailyCheckinTab({ dailyCheckins, activities }: DailyCheckinTabPr
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                Chất lượng giấc ngủ ({sleepQuality}/5)
+                Chất lượng giấc ngủ ({sleepQuality ? `${sleepQuality}/5` : 'Chưa đánh giá'})
               </label>
               <span className="text-xs text-indigo-600 font-medium">
+                {sleepQuality === null && 'Chưa đánh giá (tùy chọn)'}
                 {sleepQuality === 1 && '1 - Rất kém / chập chờn / khó ngủ'}
                 {sleepQuality === 2 && '2 - Kém / thức giấc giữa chừng'}
                 {sleepQuality === 3 && '3 - Tạm ổn / bình thường'}
@@ -181,7 +192,7 @@ export function DailyCheckinTab({ dailyCheckins, activities }: DailyCheckinTabPr
                 <button
                   type="button"
                   key={lvl}
-                  onClick={() => setSleepQuality(lvl)}
+                  onClick={() => setSleepQuality((prev) => (prev === lvl ? null : lvl))}
                   className={`py-2 text-xs font-bold rounded-lg border transition ${
                     sleepQuality === lvl
                       ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
@@ -198,9 +209,10 @@ export function DailyCheckinTab({ dailyCheckins, activities }: DailyCheckinTabPr
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                Mức năng lượng trong ngày ({energyLevel}/5)
+                Mức năng lượng trong ngày ({energyLevel ? `${energyLevel}/5` : 'Chưa đánh giá'})
               </label>
               <span className="text-xs text-emerald-600 font-medium">
+                {energyLevel === null && 'Chưa đánh giá (tùy chọn)'}
                 {energyLevel === 1 && '1 - Kiệt sức / mệt rã rời'}
                 {energyLevel === 2 && '2 - Hơi uể oải / thiếu sức'}
                 {energyLevel === 3 && '3 - Bình thường'}
@@ -213,7 +225,7 @@ export function DailyCheckinTab({ dailyCheckins, activities }: DailyCheckinTabPr
                 <button
                   type="button"
                   key={lvl}
-                  onClick={() => setEnergyLevel(lvl)}
+                  onClick={() => setEnergyLevel((prev) => (prev === lvl ? null : lvl))}
                   className={`py-2 text-xs font-bold rounded-lg border transition ${
                     energyLevel === lvl
                       ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
@@ -230,9 +242,10 @@ export function DailyCheckinTab({ dailyCheckins, activities }: DailyCheckinTabPr
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                Mức căng thẳng / áp lực ({stressLevel}/5)
+                Mức căng thẳng / áp lực ({stressLevel ? `${stressLevel}/5` : 'Chưa đánh giá'})
               </label>
               <span className="text-xs text-amber-600 font-medium">
+                {stressLevel === null && 'Chưa đánh giá (tùy chọn)'}
                 {stressLevel === 1 && '1 - Rất thoải mái / thư thái'}
                 {stressLevel === 2 && '2 - Căng thẳng nhẹ'}
                 {stressLevel === 3 && '3 - Trung bình / kiểm soát được'}
@@ -245,7 +258,7 @@ export function DailyCheckinTab({ dailyCheckins, activities }: DailyCheckinTabPr
                 <button
                   type="button"
                   key={lvl}
-                  onClick={() => setStressLevel(lvl)}
+                  onClick={() => setStressLevel((prev) => (prev === lvl ? null : lvl))}
                   className={`py-2 text-xs font-bold rounded-lg border transition ${
                     stressLevel === lvl
                       ? 'bg-amber-600 text-white border-amber-600 shadow-sm'

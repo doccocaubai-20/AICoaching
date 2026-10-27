@@ -39,7 +39,14 @@ import {
 } from '@/lib/ai/trend-analysis';
 import { buildConversationHistory } from '@/lib/ai/history';
 
-const VALID_CONSENT_SCOPES: ConsentScopeItem[] = ['profile', 'goals', 'activities', 'observations'];
+const VALID_CONSENT_SCOPES: ConsentScopeItem[] = [
+  'profile',
+  'goals',
+  'activities',
+  'observations',
+  'daily_checkins',
+  'blood_pressures',
+];
 
 /**
  * Kiểm tra trạng thái đồng ý chia sẻ dữ liệu của người dùng và trả về scope đã đồng ý.

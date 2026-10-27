@@ -8,11 +8,13 @@ import {
   Sparkles,
   ChevronRight,
   Zap,
+  AlertCircle,
 } from 'lucide-react';
 import { SessionResultEntity } from '@/contracts';
 
 interface SkillTreeSectionProps {
   sessionResults?: SessionResultEntity[];
+  fetchError?: string | null;
 }
 
 interface SkillNode {
@@ -163,9 +165,23 @@ const SKILL_NODES: SkillNode[] = [
   },
 ];
 
-export function SkillTreeSection({ sessionResults = [] }: SkillTreeSectionProps) {
+export function SkillTreeSection({ sessionResults = [], fetchError }: SkillTreeSectionProps) {
   const [selectedBranch, setSelectedBranch] = useState<'push' | 'pull' | 'core'>('push');
   const [selectedNode, setSelectedNode] = useState<SkillNode | null>(null);
+
+  if (fetchError) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 text-white shadow-xl space-y-3">
+        <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
+          <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
+          <span>Không tải được dữ liệu Cây Kỹ Năng RPG</span>
+        </div>
+        <p className="text-xs text-slate-400">
+          Đã xảy ra lỗi khi đọc lịch sử rèn luyện từ cơ sở dữ liệu ({fetchError}). Hệ thống tạm dừng tính toán điểm kinh nghiệm (XP) để tránh hiển thị sai lệch cấp bậc của bạn.
+        </p>
+      </div>
+    );
+  }
 
   // Mỗi buổi hoàn thành = 50 XP + 20 XP thưởng tân thủ
   const totalCompletedSessions = sessionResults.length;

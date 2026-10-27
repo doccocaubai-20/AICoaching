@@ -30,9 +30,11 @@ import {
   computeCheckinWeeklyStats,
 } from '@/contracts';
 import { updateHealthProfileBackgroundAction } from '@/lib/server/health-profile-actions';
+import { getLocalDateString, getPastLocalDateString } from '@/lib/date-utils';
 
 interface HealthOverviewTabProps {
   healthProfile: HealthProfileEntity | null;
+  healthProfileError?: string | null;
   observations: ObservationEntity[];
   bloodPressures: BloodPressureEntity[];
   dailyCheckins: DailyCheckinEntity[];
@@ -48,6 +50,7 @@ interface HealthOverviewTabProps {
 
 export function HealthOverviewTab({
   healthProfile,
+  healthProfileError,
   observations,
   bloodPressures,
   dailyCheckins,
@@ -75,6 +78,10 @@ export function HealthOverviewTab({
   // Xử lý lưu hồ sơ nền
   const handleSaveBackground = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (healthProfileError) {
+      setBgError('Không thể lưu hồ sơ nền khi chưa tải được dữ liệu gốc từ máy chủ.');
+      return;
+    }
     setIsSubmittingBg(true);
     setBgError(null);
 
@@ -100,8 +107,15 @@ export function HealthOverviewTab({
   const latestHeartRate = observations.find((o) => o.metric_type === 'resting_heart_rate');
   const latestBP = bloodPressures.length > 0 ? bloodPressures[0] : null;
 
-  // Thống kê sinh hoạt 7 ngày
-  const checkinStats = computeCheckinWeeklyStats(dailyCheckins, 7);
+  // [E4, E5] Thống kê sinh hoạt đúng cửa sổ 7 ngày gần nhất theo múi giờ hồ sơ
+  const userTz = healthProfile?.timezone || 'Asia/Ho_Chi_Minh';
+  const todayStr = getLocalDateString(new Date(), userTz);
+  const past6DaysStr = getPastLocalDateString(6, new Date(), userTz);
+
+  const weekCheckins = dailyCheckins.filter(
+    (c) => c.local_date && c.local_date >= past6DaysStr && c.local_date <= todayStr
+  );
+  const checkinStats = computeCheckinWeeklyStats(weekCheckins, 7);
 
   // Tình trạng & thuốc đang hoạt động
   const activeConditions = conditions.filter((c) => c.status === 'active' || c.status === 'monitoring');
@@ -191,8 +205,9 @@ export function HealthOverviewTab({
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Thông tin nền sức khỏe</h2>
           </div>
           <button
-            onClick={() => setShowBgModal(true)}
-            className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-medium px-2 py-1 bg-indigo-50 dark:bg-indigo-950/50 rounded-lg transition"
+            onClick={() => !healthProfileError && setShowBgModal(true)}
+            disabled={Boolean(healthProfileError)}
+            className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-medium px-2 py-1 bg-indigo-50 dark:bg-indigo-950/50 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Chỉnh sửa
           </button>

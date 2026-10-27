@@ -15,6 +15,7 @@ import {
   HealthEventEntity,
   ActivityEntity,
 } from '@/contracts';
+import { getLocalDateString, DEFAULT_APP_TIMEZONE } from '@/lib/date-utils';
 
 export const metadata = {
   title: 'Hồ Sơ Sức Khỏe V2 | CalisCoaching',
@@ -60,10 +61,6 @@ export default async function HealthPage() {
   if (!supabase) {
     redirect('/login');
   }
-
-  // Lấy ngày hôm nay theo múi giờ Việt Nam (UTC+7)
-  const nowVN = new Date(Date.now() + 7 * 60 * 60 * 1000);
-  const todayDateStr = nowVN.toISOString().slice(0, 10);
 
   // 3. Tải song song tất cả các khối dữ liệu sức khỏe V2
   const [
@@ -120,6 +117,21 @@ export default async function HealthPage() {
       .limit(10),
   ]);
 
+  const userTimezone = healthProfileRes.data?.timezone || DEFAULT_APP_TIMEZONE;
+  const todayDateStr = getLocalDateString(new Date(), userTimezone);
+
+  const queryErrors = [
+    profileRes.error ? `Lỗi tải hồ sơ: ${profileRes.error.message}` : null,
+    healthProfileRes.error ? `Lỗi tải hồ sơ sức khỏe: ${healthProfileRes.error.message}` : null,
+    checkinsRes.error ? `Lỗi tải sinh hoạt: ${checkinsRes.error.message}` : null,
+    bpRes.error ? `Lỗi tải huyết áp: ${bpRes.error.message}` : null,
+    conditionsRes.error ? `Lỗi tải tình trạng: ${conditionsRes.error.message}` : null,
+    medsRes.error ? `Lỗi tải thuốc: ${medsRes.error.message}` : null,
+    allergiesRes.error ? `Lỗi tải dị ứng: ${allergiesRes.error.message}` : null,
+    eventsRes.error ? `Lỗi tải sự kiện: ${eventsRes.error.message}` : null,
+    activitiesRes.error ? `Lỗi tải hoạt động: ${activitiesRes.error.message}` : null,
+  ].filter(Boolean) as string[];
+
   const displayName = profileRes.data?.display_name || user.user_metadata?.display_name || 'Người dùng';
   const healthProfile = (healthProfileRes.data as HealthProfileEntity) || null;
   const recentCheckins = (checkinsRes.data as DailyCheckinEntity[]) || [];
@@ -146,6 +158,7 @@ export default async function HealthPage() {
         recentActivities={recentActivities}
         displayName={displayName}
         isConfigured={true}
+        errors={queryErrors}
       />
     </div>
   );

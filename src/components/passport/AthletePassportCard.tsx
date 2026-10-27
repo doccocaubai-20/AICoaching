@@ -2,50 +2,65 @@
 
 import React, { useState } from 'react';
 import {
-  Trophy,
   Flame,
   Share2,
   Check,
   Dumbbell,
 } from 'lucide-react';
+import {
+  generatePassportId,
+  generateQRCodePath,
+  computeRadarDimensions,
+  setActiveSharedCard,
+} from '@/lib/passport/passport-utils';
 
 interface AthletePassportCardProps {
+  userId?: string;
   displayName: string;
   totalSessions: number;
   totalMinutes: number;
   completedGoalsCount: number;
-  streakDays: number;
+  streakDays?: number;
   workContext?: string | null;
   experienceLevel?: string;
   shareableUrl?: string;
 }
 
 export function AthletePassportCard({
+  userId,
   displayName,
   totalSessions,
   totalMinutes,
   completedGoalsCount,
-  streakDays = 3,
-  workContext,
+  streakDays = 0,
+  workContext: _workContext,
   experienceLevel = 'Người mới',
   shareableUrl = typeof window !== 'undefined' ? window.location.href : 'https://caliscoaching.vn',
 }: AthletePassportCardProps) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopyLink = () => {
-    if (typeof navigator !== 'undefined') {
-      navigator.clipboard.writeText(shareableUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+  const handleCopyLink = async () => {
+    setActiveSharedCard({ userId, displayName });
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(shareableUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      } catch {
+        // Không setCopied khi có lỗi ghi clipboard
+      }
     }
   };
 
-  // Điểm năng lực 5 chiều (radar scale 100)
-  const pushScore = Math.min(95, 40 + totalSessions * 8);
-  const pullScore = Math.min(90, 35 + totalSessions * 7);
-  const coreScore = Math.min(85, 30 + totalSessions * 6);
-  const enduranceScore = Math.min(92, 45 + Math.round(totalMinutes / 20));
-  const disciplineScore = Math.min(98, 50 + streakDays * 12);
+  // Điểm năng lực 5 chiều dựa trên đo lường và tích lũy thực tế
+  const {
+    pushScore,
+    pullScore,
+    coreScore,
+    enduranceScore,
+    disciplineScore,
+    statusLabel,
+  } = computeRadarDimensions(totalSessions, totalMinutes, streakDays);
 
   return (
     <div className="space-y-5 max-w-sm mx-auto">
@@ -65,12 +80,12 @@ export function AthletePassportCard({
               <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 block leading-tight">
                 Athlete Passport
               </span>
-              <span className="text-[9px] text-slate-400">CalisCoaching Verified ID</span>
+              <span className="text-[9px] text-slate-400">CalisCoaching Member ID</span>
             </div>
           </div>
 
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-slate-300">
-            PASSPORT #CC-{Math.abs(displayName.split('').reduce((a, b) => a + b.charCodeAt(0), 1000))}
+            PASSPORT #CC-{generatePassportId(userId || displayName)}
           </span>
         </div>
 
@@ -121,11 +136,11 @@ export function AthletePassportCard({
           </div>
         </div>
 
-        {/* Biểu đồ Năng lực Thể chất */}
+        {/* Biểu đồ Năng lực Thể chất 5 Chiều */}
         <div className="space-y-2 bg-black/40 rounded-2xl p-3.5 border border-white/10 text-[11px]">
           <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between">
             <span>Chỉ Số Năng Lực 5 Chiều</span>
-            <span className="text-emerald-400 font-mono">Đạt chuẩn</span>
+            <span className="text-emerald-400 font-mono">{statusLabel}</span>
           </span>
 
           <div className="space-y-1.5 pt-1">
@@ -160,6 +175,14 @@ export function AthletePassportCard({
             <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
               <div className="h-full bg-amber-400 rounded-full" style={{ width: `${enduranceScore}%` }} />
             </div>
+
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-300">Kỷ Luật Rèn Luyện (Discipline):</span>
+              <span className="font-mono text-rose-300 font-bold">{disciplineScore}%</span>
+            </div>
+            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full bg-rose-400 rounded-full" style={{ width: `${disciplineScore}%` }} />
+            </div>
           </div>
         </div>
 
@@ -172,7 +195,7 @@ export function AthletePassportCard({
 
           <div className="w-12 h-12 bg-white rounded-xl p-1 flex items-center justify-center shadow-md">
             <svg viewBox="0 0 24 24" className="w-full h-full text-slate-900 fill-current">
-              <path d="M2 2h8v8H2V2zm2 2v4h4V4H4zm8-2h8v8h-8V2zm2 2v4h4V4h-4zM2 14h8v8H2v-8zm2 2v4h4v-4H4zm10-2h2v2h-2v-2zm4 0h2v2h-2v-2zm-4 4h2v4h-2v-4zm4 2h2v2h-2v-2zm2-2h2v2h-2v-2zm-6-2h2v2h-2v-2z" />
+              <path d={generateQRCodePath(shareableUrl)} />
             </svg>
           </div>
         </div>

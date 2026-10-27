@@ -71,6 +71,7 @@ export function validateDailyCheckinInput(input: Partial<UpsertDailyCheckinInput
 
 export interface CheckinWeeklyStatsResult {
   totalRecordedDays: number;
+  recordedDays?: number;
   windowDays: number;
   averageSleepMinutes: number | null;
   averageEnergy: number | null;
@@ -90,6 +91,7 @@ export function computeCheckinWeeklyStats(
   if (!Array.isArray(checkins) || checkins.length === 0) {
     return {
       totalRecordedDays: 0,
+      recordedDays: 0,
       windowDays,
       averageSleepMinutes: null,
       averageEnergy: null,
@@ -98,16 +100,27 @@ export function computeCheckinWeeklyStats(
     };
   }
 
-  const recordedDays = checkins.length;
-  const sleepList = checkins
-    .map((c) => c.sleep_duration_minutes)
-    .filter((m): m is number => typeof m === 'number' && m > 0);
+  // Tính toán số ngày và số liệu trung bình hợp lệ (giữ 0 phút là giá trị người dùng đã khai)
+  // Lọc các bản ghi theo ngày duy nhất nếu có local_date
+  const uniqueDateMap = new Map<string, DailyCheckinEntity>();
+  checkins.forEach((c) => {
+    if (c.local_date) {
+      uniqueDateMap.set(c.local_date, c);
+    }
+  });
 
-  const energyList = checkins
+  const effectiveCheckins = uniqueDateMap.size > 0 ? Array.from(uniqueDateMap.values()) : checkins;
+  const recordedDays = Math.min(effectiveCheckins.length, windowDays);
+
+  const sleepList = effectiveCheckins
+    .map((c) => c.sleep_duration_minutes)
+    .filter((m): m is number => typeof m === 'number' && !isNaN(m) && m >= 0);
+
+  const energyList = effectiveCheckins
     .map((c) => c.energy_level)
     .filter((e): e is number => typeof e === 'number' && e >= 1);
 
-  const stressList = checkins
+  const stressList = effectiveCheckins
     .map((c) => c.stress_level)
     .filter((s): s is number => typeof s === 'number' && s >= 1);
 
@@ -124,6 +137,7 @@ export function computeCheckinWeeklyStats(
 
   return {
     totalRecordedDays: recordedDays,
+    recordedDays,
     windowDays,
     averageSleepMinutes: avgSleep,
     averageEnergy: avgEnergy,

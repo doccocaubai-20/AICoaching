@@ -38,12 +38,23 @@ export function validateObservationInput(input: Partial<CreateObservationInput>)
     errors.metric_type = 'Loại chỉ số không hợp lệ.';
   }
 
-  if (typeof input.metric_value !== 'number' || isNaN(input.metric_value) || input.metric_value <= 0) {
-    errors.metric_value = 'Giá trị chỉ số phải là một số dương lớn hơn 0.';
+  if (typeof input.metric_value !== 'number' || !Number.isFinite(input.metric_value) || input.metric_value <= 0) {
+    errors.metric_value = 'Giá trị chỉ số phải là một số hữu hạn dương lớn hơn 0.';
   }
 
   if (!input.metric_unit || input.metric_unit.trim().length === 0) {
     errors.metric_unit = 'Đơn vị chỉ số không được để trống.';
+  } else {
+    const unit = input.metric_unit.trim().toLowerCase();
+    if (input.metric_type === 'weight' && !['kg', 'lbs'].includes(unit)) {
+      errors.metric_unit = 'Đơn vị cân nặng phải là kg hoặc lbs.';
+    } else if (input.metric_type === 'height' && !['cm', 'm'].includes(unit)) {
+      errors.metric_unit = 'Đơn vị chiều cao phải là cm hoặc m.';
+    } else if (input.metric_type === 'waist_circumference' && !['cm', 'inch'].includes(unit)) {
+      errors.metric_unit = 'Đơn vị vòng eo phải là cm hoặc inch.';
+    } else if (input.metric_type === 'resting_heart_rate' && unit !== 'bpm') {
+      errors.metric_unit = 'Đơn vị nhịp tim phải là bpm.';
+    }
   }
 
   return {

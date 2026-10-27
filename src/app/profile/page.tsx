@@ -121,19 +121,29 @@ export default async function ProfilePage() {
         userExperienceLevel={userExperienceLevel}
         userEquipment={userEquipment}
         userSchedule={userSchedule}
-        profileError={profileRes.error ? 'Không tải được hồ sơ.' : null}
+        profileError={profileRes.error ? `Không tải được hồ sơ: ${profileRes.error.message}` : null}
         goals={(goalsRes.data as GoalEntity[]) || []}
-        goalsError={goalsRes.error ? 'Không tải được mục tiêu.' : null}
+        goalsError={goalsRes.error ? `Không tải được mục tiêu: ${goalsRes.error.message}` : null}
         healthProfile={(healthProfileRes.data as HealthProfileEntity) || null}
+        healthProfileError={healthProfileRes.error ? `Không tải được hồ sơ sức khỏe: ${healthProfileRes.error.message}` : null}
         observations={(observationsRes.data as ObservationEntity[]) || []}
+        observationsError={observationsRes.error ? `Không tải được chỉ số thể chất: ${observationsRes.error.message}` : null}
         bloodPressures={(bpRes.data as BloodPressureEntity[]) || []}
+        bloodPressuresError={bpRes.error ? `Không tải được huyết áp: ${bpRes.error.message}` : null}
         dailyCheckins={(checkinsRes.data as DailyCheckinEntity[]) || []}
+        dailyCheckinsError={checkinsRes.error ? `Không tải được sinh hoạt hằng ngày: ${checkinsRes.error.message}` : null}
         conditions={(conditionsRes.data as HealthConditionEntity[]) || []}
+        conditionsError={conditionsRes.error ? `Không tải được tình trạng sức khỏe: ${conditionsRes.error.message}` : null}
         allergies={(allergiesRes.data as AllergyEntity[]) || []}
+        allergiesError={allergiesRes.error ? `Không tải được thông tin dị ứng: ${allergiesRes.error.message}` : null}
         medications={(medicationsRes.data as MedicationEntity[]) || []}
+        medicationsError={medicationsRes.error ? `Không tải được thông tin thuốc: ${medicationsRes.error.message}` : null}
         healthEvents={(eventsRes.data as HealthEventEntity[]) || []}
+        healthEventsError={eventsRes.error ? `Không tải được sự kiện y tế: ${eventsRes.error.message}` : null}
         documents={(docsRes.data as HealthDocumentEntity[]) || []}
+        documentsError={docsRes.error ? `Không tải được tài liệu y tế: ${docsRes.error.message}` : null}
         activities={(activitiesRes.data as ActivityEntity[]) || []}
+        activitiesError={activitiesRes.error ? `Không tải được hoạt động: ${activitiesRes.error.message}` : null}
         isConfigured={true}
       />
     </div>

@@ -2,9 +2,9 @@
 ## CALISCOACHING - INTERACTIVE & HEALTH SYNERGY EXPERIENCE
 
 **Nhánh Git:** `feature/health-v2-breakthrough-experience`  
-**Ngày hoàn thành:** 27/10/2026  
-**Trạng thái kiểm thử:** 164/164 tests passed across 13 test suites  
-**Biên dịch & Build:** `npx tsc --noEmit` đạt 0 lỗi; `npm run build` thành công 100% (bao gồm các route mới `/health` và `/passport`)
+**Ngày cập nhật:** 27/10/2026  
+**Trạng thái kiểm thử:** 214/214 tests passed across 20 test suites (100% pass tuần tự)  
+**Biên dịch & Build:** `npx tsc --noEmit --incremental false` đạt 0 lỗi; `npm run build` thành công 100% với Next.js 15 và Server Actions bodySizeLimit 10MB (bao gồm tất cả các route: `/`, `/dashboard`, `/health`, `/passport`, `/programs`, `/activities`, `/profile`, `/ai`)
 
 ---
 
@@ -38,7 +38,7 @@ Trên nhánh mới `feature/health-v2-breakthrough-experience`, chúng tôi đã
     * Tiếng Ding trong trẻo khi bấm *"Xong hiệp này 🎯"*.
     * Kích hoạt ngay **Đồng hồ đếm ngược thời gian nghỉ (Rest Timer 60s/90s)** dạng vòng tròn (Circular Progress).
     * Khi đồng hồ nghỉ về 3, 2, 1 -> phát tiếng Beep; về 0 -> phát tiếng chuông reo **Rest Over Alarm** báo vào hiệp tiếp theo.
-  * **Kết thúc buổi tập:** Tự động phát nhạc chiến thắng (Fanfare), thanh trượt chọn mức mệt RPE (1-10) và lưu kết quả tự động vào cơ sở dữ liệu.
+  * **Kết thúc buổi tập:** Tự động phát nhạc chiến thắng (Fanfare), thanh trượt chọn mức mệt RPE (1-10) và lưu kết quả tự động vào cơ sở dữ liệu với số reps thực tế chuẩn xác.
 
 ---
 
@@ -51,18 +51,18 @@ Trên nhánh mới `feature/health-v2-breakthrough-experience`, chúng tôi đã
     * **Nhánh Đẩy (Pushing):** Incline Push-up ➔ Standard Push-up ➔ Diamond Push-up ➔ Archer Push-up ➔ Handstand Push-up.
     * **Nhánh Kéo (Pulling):** Dead Hang ➔ Inverted Row ➔ Standard Pull-up ➔ Chest to Bar ➔ Muscle-up.
     * **Nhánh Core & Chân:** Squat/Plank ➔ Hanging Knee Raise ➔ L-Sit ➔ Dragon Flag.
-  * **Trực quan hóa:** Các node kỹ năng có trạng thái Đã mở (Unlocked ✨) hoặc Khóa (Locked 🔒), bấm vào để xem tiêu chuẩn chinh phục (Mastery Criteria).
+  * **Bảo vệ toàn vẹn dữ liệu:** Khi có lỗi đọc DB (`resultsError`), hệ thống tạm dừng tính toán XP và hiển thị cảnh báo, tuyệt đối không tự ý hiển thị user như một tân thủ trắng điểm.
 
 ---
 
 ### 🪪 3. Thẻ Căn Cước Vận Động & Mã QR Động (`/passport`)
-* **Vị trí:** Route mới `/passport` hoặc truy cập qua nút **"🪪 Thẻ Vận Động"** trên Dashboard.
+* **Vị trí:** Route mới `/passport` hoặc truy cập qua nút **"Athlete Passport"** trên Dashboard.
 * **Thiết kế Cyberpunk / Hologram sang trọng:**
-  * Mã định danh hồ sơ vận động viên: `#CC-[ID]`.
-  * **Chuỗi ngày kỷ luật (Streak Flame 🔥):** Tôn vinh tính kiên trì của người tập.
-  * **Biểu đồ Năng lực Thể chất 5 chiều (Radar Bars):** Sức Đẩy, Sức Kéo, Cơ Lõi (Core), Độ Bền & Phục Hồi, Kỷ Luật Sinh Hoạt.
-  * **Mã QR Code động:** Cho phép quét camera điện thoại để đối chiếu hồ sơ hoặc chia sẻ với Huấn luyện viên / bạn bè.
-  * Nút "Sao chép liên kết chia sẻ" 1 chạm.
+  * Mã định danh hồ sơ vận động viên: `#CC-[ID]` bền vững theo tài khoản.
+  * **Chuỗi ngày kỷ luật (Streak Flame 🔥):** Tính theo chuỗi ngày tập liên tiếp thực tế theo giờ địa phương, tự động phát hiện đứt chuỗi và loại bỏ ngày tương lai.
+  * **Biểu đồ Năng lực Rèn Luyện 5 chiều:** Thể hiện tần suất và mức độ kiên trì tích lũy, không suy đoán năng lực y khoa khi chưa có phép đo thể chất.
+  * **Mã QR Code vector thật:** Sinh SVG động từ URL với module `qrcode`, quét được bằng camera điện thoại.
+  * Nút "Sao chép liên kết chia sẻ" có kiểm tra trạng thái clipboard bất đồng bộ.
 
 ---
 
@@ -70,48 +70,63 @@ Trên nhánh mới `feature/health-v2-breakthrough-experience`, chúng tôi đã
 * **Vị trí:** Đặt ngay đầu trang `/dashboard` và trang `/health`.
 * **Xóa bỏ cảm giác gõ form:**
   * Thanh trượt thời lượng ngủ từ 4h đến 12h.
-  * 3 hàng Emoji Sliders trực quan:
-    * Giấc ngủ: 😴 Rất mệt ➔ 🥱 Uể oải ➔ 😐 Tạm ổn ➔ 😊 Ngon giấc ➔ 🤩 Sảng khoái
-    * Năng lượng: 🪫 Kiệt sức ➔ 🔋 Hơi thấp ➔ ⚡ Bình thường ➔ 🚀 Khỏe khoắn ➔ 🔥 Đỉnh cao
-    * Căng thẳng: 😌 Thoải mái ➔ 🙂 Nhẹ nhàng ➔ 😐 Bình thường ➔ 😰 Căng thẳng ➔ 🤯 Quá tải
+  * 3 hàng Emoji Sliders trực quan cho Giấc ngủ, Năng lượng, Căng thẳng.
   * Nút "Lưu Sinh Hoạt Ngay ✨" hoàn thành trong chưa đầy 10 giây.
 
 ---
 
 ### 🛡️ 5. AI Synergy Health Guard: Đối Chiếu Sức Khỏe & An Toàn Vận Động
 * **Vị trí:** Tự động phân tích trên trang `/health` và trang `/dashboard`.
-* **Thuật toán đối chiếu liên hoàn:**
-  * **Khớp & Chấn thương:** Phát hiện chấn thương vai/cổ tay/lưng đang có trong hồ sơ -> Đưa ra khuyến nghị thay đổi bài tập calisthenics an toàn (Ví dụ: Đau vai thì tạm hoãn Pull-up/Dips, đổi sang Inverted Row; đau cổ tay thì chuyển sang dùng Push-up bar).
-  * **Giấc ngủ & Phục hồi:** Nếu đêm qua ngủ < 6 tiếng -> Cảnh báo hạ 20-30% khối lượng tập để tránh chấn thương gân cơ.
-  * **Huyết áp:** Nếu huyết áp tâm thu > 135 mmHg -> Cảnh báo tránh nín thở gồng tĩnh (Valsalva maneuver) khi tập Plank hoặc Dead hang.
-  * **Trạng thái sẵn sàng cao (Green Light 🟢):** Chúc mừng và khích lệ người dùng hoàn thành giáo án khi các chỉ số đều tối ưu.
+* **Thuật toán đối chiếu an toàn:**
+  * Khớp & Chấn thương: Cảnh báo điều chỉnh các bài tập tác động xấu lên khớp bị đau.
+  * Giấc ngủ & Phục hồi: Cảnh báo hạ tải khi ngủ thiếu giấc.
+  * Huyết áp: Cảnh báo tránh nín thở gồng tĩnh (Valsalva) khi huyết áp cao.
+  * Tôn trọng nguyên tắc không gán nhãn Green Light khi dữ liệu còn thiếu.
 
 ---
 
-## 3. Danh mục tệp mã nguồn mới & chỉnh sửa
+## 3. Khắc phục triệt để 14 phát hiện từ đợt Review toàn diện (7 Standards + 7 Spec)
 
-| Tệp tin | Trách nhiệm |
-|---|---|
-| `src/lib/sound/workout-sound.ts` | Web Audio API Synthesizer (tiếng Beep, Ding, Rest Alarm, Fanfare) |
-| `src/components/programs/LiveWorkoutModal.tsx` | Chế độ tập Live tương tác, đồng hồ đếm nghỉ tròn, RPE slider |
-| `src/components/programs/SkillTreeSection.tsx` | Cây kỹ năng Calisthenics RPG, hệ thống XP & Rank |
-| `src/components/passport/AthletePassportCard.tsx` | Thẻ Căn Cước Vận Động Cyberpunk, biểu đồ 5 chiều, QR Code |
-| `src/app/passport/page.tsx` | Route Server Component hiển thị Thẻ Căn Cước Vận Động |
-| `src/components/health/QuickCheckinWidget.tsx` | Micro-interaction Check-in 1 chạm 10 giây |
-| `src/components/health/AISynergyGuardCard.tsx` | AI Synergy Guard đối chiếu Sức Khỏe & Vận Động |
-| `src/app/health/page.tsx` | Route Trung Tâm Sức Khỏe Toàn Diện V2 |
-| `src/components/layout/BottomNav.tsx` | Bổ sung tab "Sức khỏe" (HeartPulse icon) |
-| `src/app/dashboard/page.tsx` | Tích hợp Quick Check-in Widget & nút dẫn vào Passport |
-| `src/tests/health-v2-interactive.test.ts` | Test suite 15 test cases kiểm thử tự động toàn bộ logic mới |
+### A. Nhóm Chuẩn Mực (Standards S1–S7)
+1. **S1 (Quota Upload đồng thời):** Sử dụng cơ chế khóa tuần tự hóa theo người dùng `runWithUserUploadLock(user.id, ...)` trong `uploadHealthDocumentAction`. Ngăn chặn hoàn toàn race condition khi 2 tiến trình upload cùng chạy song song, bảo đảm tổng dung lượng không bao giờ vượt 100MB.
+2. **S2 (Xử lý tệp mồ côi):** Chuyển sang quy trình lưu trữ an toàn: Lưu metadata giữ chỗ vào DB trước, sau đó mới upload lên Storage. Nếu DB insert thất bại, file chưa từng tải lên Storage nên không bao giờ phát sinh tệp mồ côi.
+3. **S3 (Chặn chèn metadata tùy ý):** Khóa endpoint `createHealthDocumentAction` đối với các yêu cầu chèn metadata thủ công tùy ý từ client, bắt buộc toàn bộ tệp phải qua luồng `uploadHealthDocumentAction` có kiểm soát từ Server.
+4. **S4 (Số đo hữu hạn & đúng đơn vị):** 
+   * Trong DB Migration: Thêm ràng buộc `CHECK (metric_value > 0 AND metric_value <> 'NaN'::numeric AND metric_value < 'Infinity'::numeric)` và ràng buộc kiểm tra đơn vị nghiêm ngặt theo từng `metric_type`. Chặn hoàn toàn `NaN`, `Infinity`, và cân nặng có đơn vị `cm`.
+   * Trong TypeScript contract: Thêm kiểm tra `Number.isFinite(metric_value)` và danh mục đơn vị hợp lệ cho từng loại chỉ số.
+5. **S5 (Phân định điểm tích lũy với đo lường thể chất):** Chuyển đổi toàn bộ khái niệm trên thẻ Passport sang **Điểm Tích Lũy Rèn Luyện (Activity & Discipline XP)**. Không tự suy diễn ra sức mạnh đẩy/kéo hoặc khả năng phục hồi từ một buổi tập thông thường.
+6. **S6 (Passport ID ổn định & Gỡ nhãn Verified ngộ nhận):** Passport ID được định danh dựa trên tài khoản người dùng, giữ nguyên giá trị khi đổi tên. Gỡ bỏ nhãn "Verified ID" gây hiểu lầm.
+7. **S7 (Chặn ghi đè hồ sơ nền sau lỗi đọc):** Khi `healthProfileError` xảy ra, `HealthOverviewTab` khóa nút "Chỉnh sửa" và từ chối submit form, ngăn chặn hoàn toàn việc upsert giá trị null làm mất hồ sơ gốc. Khối `SkillTreeSection` cũng được trang bị màn hình báo lỗi khi `resultsError` xảy ra.
+
+### B. Nhóm Đặc Tả (Spec E1–E7)
+1. **E1 & E2 (Chia sẻ Passport, RLS và Dynamic Origin):** 
+   * Khi người dùng xem thẻ chia sẻ mà Supabase RLS ẩn dữ liệu của chủ thẻ, trang `/passport` render trạng thái Denied/Not-found rõ ràng, tuyệt đối không ghép ID của người gửi với tên của người xem.
+   * Origin chia sẻ được lấy động từ `process.env.NEXT_PUBLIC_SITE_URL` hoặc header môi trường thay vì hardcode.
+2. **E3 (Chuỗi ngày Streak chuẩn xác):** 
+   * Hàm `calculateStreakDays` sử dụng ngày địa phương (mặc định Asia/Ho_Chi_Minh), tự động loại bỏ các hoạt động có timestamp trong tương lai.
+   * Nhận diện chuỗi ngày hiện tại (Current Streak): Nếu không có buổi tập nào hôm nay hoặc hôm qua, streak trả về 0 (chuỗi đã đứt).
+   * Nhiều buổi tập trong cùng một ngày địa phương chỉ tính tối đa 1 ngày.
+3. **E4 (Đồng bộ Consent Scope AI):** Bổ sung `'daily_checkins'` và `'blood_pressures'` vào mảng `VALID_CONSENT_SCOPES` trong `src/app/ai/actions.ts`. Người dùng có thể cấp quyền và thu hồi quyền chia sẻ dữ liệu check-in và huyết áp minh bạch.
+4. **E5 (Khắc phục lệch múi giờ 7 tiếng & Ghi bù Huyết áp):**
+   * Xây dựng hàm `toLocalDatetimeInputValue(date)` chuyển đổi Date sang định dạng datetime-local theo giờ máy chuẩn xác.
+   * Khi người dùng chỉnh sửa chỉ số mà không đổi ngày giờ, timestamp gốc ISO UTC được bảo toàn nguyên vẹn 100%.
+   * Form Huyết áp được bổ sung trường chọn thời điểm đo `measured_at` và nguồn đo `source`, hoàn tất chức năng ghi bù.
+5. **E6 (Trích xuất số reps thực tế cho Live Workout):** `LiveWorkoutModal` trích xuất số reps đơn cụ thể (`match(/\d+/)`), không lưu nguyên chuỗi dải mục tiêu (như `'8–12'`) vào `actual_reps`.
+6. **E7 (Cấu hình Server Actions Body Limit 10MB):** Tạo file cấu hình `next.config.ts` với `serverActions.bodySizeLimit: '10mb'`, loại bỏ giới hạn mặc định 1MB của Next.js 15 và đảm bảo tải tệp dung lượng lớn thành công qua web.
 
 ---
 
-## 4. Kết quả nghiệm thu
+## 4. Kết quả nghiệm thu kỹ thuật toàn diện
 
-* **Biên dịch TypeScript:** `npx tsc --noEmit` -> 0 lỗi.
-* **Kiểm thử tự động:** `npx vitest run --fileParallelism=false` -> **164/164 tests passed (13 test suites)**.
-* **Build Production:** `npm run build` thành công, tạo ra các bundle tối ưu:
-  * `/health` (11.8 kB)
-  * `/passport` (3.44 kB)
-  * `/programs` (10.7 kB)
-  * `/dashboard` (183 B)
+* **Biên dịch TypeScript (`npx tsc --noEmit --incremental false`):** **0 lỗi**.
+* **Kiểm thử tự động (`npx vitest run --fileParallelism=false`):** **214/214 tests passed across 20 test suites (100% pass)**.
+  * `recheck-standards-extra.test.ts`: 3/3 PASS
+  * `spec-passport-recheck.test.tsx`: 1/1 PASS
+  * `recheck-integration-extra.test.tsx`: 5/5 PASS
+  * `review-experience-findings.test.tsx`: 10/10 PASS
+  * `review-v2-findings.test.tsx`: 10/10 PASS
+  * `standards-v2-security.test.ts`: 10/10 PASS
+  * `health-v2-operations.test.ts`: 11/11 PASS
+  * `health-v2-interactive.test.ts`: 15/15 PASS
+  * Toàn bộ 12 test suites của các Agent B, C, D, E, F: 149/149 PASS
+* **Build Production (`npm run build`):** Compiled successfully 100%, tất cả route động & tĩnh được tối ưu hóa hoàn chỉnh.

@@ -11,7 +11,9 @@
 - `BAN_GIAO_A_SANG_E.md`: quyền bảng AI, đồng ý, nhà cung cấp/model, an toàn prompt và prompt giao agent E.
 - `BAN_GIAO_E.md`: báo cáo của agent E (tương tác AI, tóm tắt, hỏi đáp, phân tích xu hướng, khắc phục sau rà soát).
 - `BAN_GIAO_F.md`: báo cáo của agent F (tích hợp toàn diện, nghiệm thu rà soát E, kiểm định smoke test và kiểm thử end-to-end).
-- `BAN_GIAO_HO_SO_SUC_KHOE_V2.md`: báo cáo triển khai và bàn giao tính năng Hồ sơ Sức khỏe Cá nhân V2 (Migration 6, Contracts, Server Actions, UI 5 khu vực, Live Workout Companion và kiểm thử tự động).
+- `BAN_GIAO_HO_SO_SUC_KHOE_V2.md`: báo cáo ban đầu triển khai Hồ sơ Sức khỏe Cá nhân V2 (Migration 6, Contracts, Server Actions, UI 5 khu vực).
+- `BAN_GIAO_EXPERIENCE_DOT_PHA.md`: báo cáo bàn giao 3 tính năng đột phá (Live Workout Companion, Calisthenics Skill Tree RPG & Athlete Passport QR).
+- `BAN_GIAO_SUA_HO_SO_SUC_KHOE_V2.md`: báo cáo bàn giao khắc phục toàn diện 16 phát hiện review S1–S5 và E1–E11 (Migration 7, RLS Storage, Trigger chống cross-owner, Upload file thật, Kiểm soát Consent AI, Khóa Idempotency và 205/205 tests đạt 100%).
 - `AI_Coaching_de_xuat_y_tuong.md`: đề xuất ý tưởng trước đó; có thể còn nội dung về HLV ở giai đoạn đầu, cần cập nhật nếu sử dụng theo định hướng mới.
 - `QR_ho_so_doi_chieu_san_pham.md`: đối chiếu sản phẩm có hồ sơ và QR.
 - Các báo cáo cũ cung cấp bối cảnh; phạm vi và ưu tiên MVP hiện hành theo PLAN_MVP.md.

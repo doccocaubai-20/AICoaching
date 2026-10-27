@@ -1,14 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
-import { HeartPulse, PlusCircle, Trash2, TrendingUp, AlertCircle } from 'lucide-react';
-import { ObservationEntity, BloodPressureEntity, MetricType } from '@/contracts';
+import { HeartPulse, PlusCircle, Trash2, TrendingUp, AlertCircle, Edit3 } from 'lucide-react';
+import { ObservationEntity, BloodPressureEntity, MetricType, ObservationSource } from '@/contracts';
 import { deleteObservationAction } from '@/app/profile/actions';
 import {
   addBloodPressureAction,
   deleteBloodPressureAction,
   addObservationDirectAction,
+  updateObservationAction,
+  updateBloodPressureAction,
 } from '@/lib/server/health-profile-actions';
+
+import { toLocalDatetimeInputValue } from '@/lib/date-utils';
 
 interface VitalsTabProps {
   observations: ObservationEntity[];
@@ -23,6 +27,8 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
   const [metricType, setMetricType] = useState<MetricType>('weight');
   const [metricValue, setMetricValue] = useState<string>('');
   const [metricUnit, setMetricUnit] = useState<string>('kg');
+  const [obsDate, setObsDate] = useState<string>(() => toLocalDatetimeInputValue(new Date()));
+  const [obsSource, setObsSource] = useState<ObservationSource>('self_reported');
   const [obsNotes, setObsNotes] = useState<string>('');
   const [isSubmittingObs, setIsSubmittingObs] = useState(false);
   const [obsError, setObsError] = useState<string | null>(null);
@@ -30,9 +36,33 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
   // State nhập huyết áp (systolic & diastolic)
   const [systolic, setSystolic] = useState<string>('120');
   const [diastolic, setDiastolic] = useState<string>('80');
+  const [bpDate, setBpDate] = useState<string>(() => toLocalDatetimeInputValue(new Date()));
+  const [bpSource, setBpSource] = useState<ObservationSource>('self_reported');
   const [bpNotes, setBpNotes] = useState<string>('');
   const [isSubmittingBP, setIsSubmittingBP] = useState(false);
   const [bpError, setBpError] = useState<string | null>(null);
+
+  // State sửa chỉ số đơn (E6)
+  const [editingObs, setEditingObs] = useState<ObservationEntity | null>(null);
+  const [editObsValue, setEditObsValue] = useState<string>('');
+  const [editObsUnit, setEditObsUnit] = useState<string>('');
+  const [editObsDate, setEditObsDate] = useState<string>('');
+  const [initialEditObsDate, setInitialEditObsDate] = useState<string>('');
+  const [editObsSource, setEditObsSource] = useState<ObservationSource>('self_reported');
+  const [editObsNotes, setEditObsNotes] = useState<string>('');
+  const [isUpdatingObs, setIsUpdatingObs] = useState(false);
+  const [editObsError, setEditObsError] = useState<string | null>(null);
+
+  // State sửa huyết áp (E6)
+  const [editingBP, setEditingBP] = useState<BloodPressureEntity | null>(null);
+  const [editBPSystolic, setEditBPSystolic] = useState<string>('120');
+  const [editBPDiastolic, setEditBPDiastolic] = useState<string>('80');
+  const [editBPDate, setEditBPDate] = useState<string>('');
+  const [initialEditBPDate, setInitialEditBPDate] = useState<string>('');
+  const [editBPSource, setEditBPSource] = useState<ObservationSource>('self_reported');
+  const [editBPNotes, setEditBPNotes] = useState<string>('');
+  const [isUpdatingBP, setIsUpdatingBP] = useState(false);
+  const [editBPError, setEditBPError] = useState<string | null>(null);
 
   // Cập nhật đơn vị tự động khi đổi loại chỉ số
   const handleMetricTypeChange = (type: MetricType) => {
@@ -43,7 +73,7 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
     else setMetricUnit('đơn vị');
   };
 
-  // Submit chỉ số đơn
+  // Submit chỉ số đơn (E6 cho phép chọn thời điểm đo và nguồn)
   const handleSubmitObservation = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmittingObs(true);
@@ -60,6 +90,8 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
       metric_type: metricType,
       metric_value: num,
       metric_unit: metricUnit,
+      observed_at: obsDate ? new Date(obsDate).toISOString() : new Date().toISOString(),
+      source: obsSource,
       notes: obsNotes.trim() || null,
     });
 
@@ -73,7 +105,7 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
     }
   };
 
-  // Submit huyết áp
+  // Submit huyết áp (E6 cho phép chọn thời điểm đo và nguồn)
   const handleSubmitBloodPressure = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmittingBP(true);
@@ -85,6 +117,8 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
     const res = await addBloodPressureAction({
       systolic: sys,
       diastolic: dia,
+      measured_at: bpDate ? new Date(bpDate).toISOString() : new Date().toISOString(),
+      source: bpSource,
       notes: bpNotes.trim() || null,
     });
 
@@ -94,6 +128,94 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
     } else {
       setBpNotes('');
       setActiveSubTab('history');
+    }
+  };
+
+  // Bắt đầu sửa chỉ số (E6)
+  const handleStartEditObservation = (obs: ObservationEntity) => {
+    setEditingObs(obs);
+    setEditObsValue(String(obs.metric_value));
+    setEditObsUnit(obs.metric_unit);
+    const localStr = toLocalDatetimeInputValue(new Date(obs.observed_at));
+    setEditObsDate(localStr);
+    setInitialEditObsDate(localStr);
+    setEditObsSource(obs.source);
+    setEditObsNotes(obs.notes || '');
+    setEditObsError(null);
+  };
+
+  // Lưu sửa chỉ số (E6)
+  const handleSaveEditObservation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingObs) return;
+    setIsUpdatingObs(true);
+    setEditObsError(null);
+
+    const num = parseFloat(editObsValue);
+    if (isNaN(num) || num <= 0) {
+      setEditObsError('Giá trị phải là số dương lớn hơn 0.');
+      setIsUpdatingObs(false);
+      return;
+    }
+
+    const res = await updateObservationAction(editingObs.id, {
+      metric_value: num,
+      metric_unit: editObsUnit,
+      observed_at:
+        editObsDate && editObsDate !== initialEditObsDate
+          ? new Date(editObsDate).toISOString()
+          : editingObs.observed_at,
+      source: editObsSource,
+      notes: editObsNotes.trim() || null,
+    });
+
+    setIsUpdatingObs(false);
+    if (!res.success) {
+      setEditObsError(res.message || 'Lỗi cập nhật chỉ số');
+    } else {
+      setEditingObs(null);
+    }
+  };
+
+  // Bắt đầu sửa huyết áp (E6)
+  const handleStartEditBP = (bp: BloodPressureEntity) => {
+    setEditingBP(bp);
+    setEditBPSystolic(String(bp.systolic));
+    setEditBPDiastolic(String(bp.diastolic));
+    const localStr = toLocalDatetimeInputValue(new Date(bp.measured_at));
+    setEditBPDate(localStr);
+    setInitialEditBPDate(localStr);
+    setEditBPSource((bp.source as ObservationSource) || 'self_reported');
+    setEditBPNotes(bp.notes || '');
+    setEditBPError(null);
+  };
+
+  // Lưu sửa huyết áp (E6)
+  const handleSaveEditBP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBP) return;
+    setIsUpdatingBP(true);
+    setEditBPError(null);
+
+    const sys = parseInt(editBPSystolic, 10);
+    const dia = parseInt(editBPDiastolic, 10);
+
+    const res = await updateBloodPressureAction(editingBP.id, {
+      systolic: sys,
+      diastolic: dia,
+      measured_at:
+        editBPDate && editBPDate !== initialEditBPDate
+          ? new Date(editBPDate).toISOString()
+          : editingBP.measured_at,
+      source: editBPSource,
+      notes: editBPNotes.trim() || null,
+    });
+
+    setIsUpdatingBP(false);
+    if (!res.success) {
+      setEditBPError(res.message || 'Lỗi cập nhật huyết áp');
+    } else {
+      setEditingBP(null);
     }
   };
 
@@ -293,6 +415,34 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                    Thời điểm đo
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={bpDate}
+                    onChange={(e) => setBpDate(e.target.value)}
+                    className="w-full text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 bg-transparent focus:ring-2 focus:ring-rose-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                    Nguồn đo
+                  </label>
+                  <select
+                    value={bpSource}
+                    onChange={(e) => setBpSource(e.target.value as ObservationSource)}
+                    className="w-full text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 bg-transparent focus:ring-2 focus:ring-rose-500 outline-none"
+                  >
+                    <option value="self_reported">Tự đo tại nhà</option>
+                    <option value="clinical">Khám lâm sàng / Cơ sở y tế</option>
+                    <option value="device_sync">Đồng bộ thiết bị</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
                   Ghi chú lần đo
@@ -488,13 +638,22 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
                           </td>
                           <td className="p-2 text-slate-400">{b.notes || '--'}</td>
                           <td className="p-2 text-right">
-                            <button
-                              onClick={() => handleDeleteBP(b.id)}
-                              className="text-rose-500 hover:text-rose-700 p-1"
-                              title="Xóa bản ghi"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => handleStartEditBP(b)}
+                                className="text-slate-400 hover:text-indigo-600 p-1"
+                                title="Sửa bản ghi huyết áp"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteBP(b.id)}
+                                className="text-rose-500 hover:text-rose-700 p-1"
+                                title="Xóa bản ghi"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -540,13 +699,22 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
                           </td>
                           <td className="p-2 text-slate-400">{o.notes || '--'}</td>
                           <td className="p-2 text-right">
-                            <button
-                              onClick={() => handleDeleteObservation(o.id)}
-                              className="text-rose-500 hover:text-rose-700 p-1"
-                              title="Xóa bản ghi"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => handleStartEditObservation(o)}
+                                className="text-slate-400 hover:text-indigo-600 p-1"
+                                title="Sửa bản ghi chỉ số"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteObservation(o.id)}
+                                className="text-rose-500 hover:text-rose-700 p-1"
+                                title="Xóa bản ghi"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -557,6 +725,196 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
                 <p className="text-xs text-slate-400 italic">Chưa có chỉ số thể chất nào.</p>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SỬA CHỈ SỐ ĐƠN (E6) */}
+      {editingObs && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 w-full max-w-md shadow-xl text-xs space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Edit3 className="w-4 h-4 text-indigo-600" />
+              <span>Sửa bản ghi chỉ số (Giữ nguyên ID & lịch sử)</span>
+            </h3>
+
+            {editObsError && (
+              <div className="p-2 text-rose-600 bg-rose-50 dark:bg-rose-950/40 rounded-lg">
+                {editObsError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditObservation} className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-600 dark:text-slate-400 block mb-1">Giá trị đo</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    required
+                    value={editObsValue}
+                    onChange={(e) => setEditObsValue(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-600 dark:text-slate-400 block mb-1">Đơn vị</label>
+                  <input
+                    type="text"
+                    required
+                    value={editObsUnit}
+                    onChange={(e) => setEditObsUnit(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-transparent"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-600 dark:text-slate-400 block mb-1">Thời điểm đo thực tế</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={editObsDate}
+                  onChange={(e) => setEditObsDate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-600 dark:text-slate-400 block mb-1">Nguồn dữ liệu</label>
+                <select
+                  value={editObsSource}
+                  onChange={(e) => setEditObsSource(e.target.value as ObservationSource)}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1.5 bg-transparent"
+                >
+                  <option value="self_reported">Tự khai (Self-reported)</option>
+                  <option value="manual_import">Nhập thủ công từ giấy khám</option>
+                  <option value="manual_entry">Tự đo tại nhà</option>
+                  <option value="session_sync">Đồng bộ buổi tập</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-600 dark:text-slate-400 block mb-1">Ghi chú bối cảnh</label>
+                <input
+                  type="text"
+                  value={editObsNotes}
+                  onChange={(e) => setEditObsNotes(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-transparent"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingObs(null)}
+                  className="px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingObs}
+                  className="px-3 py-1.5 rounded-lg font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {isUpdatingObs ? 'Đang cập nhật...' : 'Lưu thay đổi'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SỬA HUYẾT ÁP (E6) */}
+      {editingBP && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 w-full max-w-md shadow-xl text-xs space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <HeartPulse className="w-4 h-4 text-rose-500" />
+              <span>Sửa bản ghi huyết áp</span>
+            </h3>
+
+            {editBPError && (
+              <div className="p-2 text-rose-600 bg-rose-50 dark:bg-rose-950/40 rounded-lg">
+                {editBPError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditBP} className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-600 dark:text-slate-400 block mb-1">Tâm thu (mmHg)</label>
+                  <input
+                    type="number"
+                    required
+                    value={editBPSystolic}
+                    onChange={(e) => setEditBPSystolic(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-600 dark:text-slate-400 block mb-1">Tâm trương (mmHg)</label>
+                  <input
+                    type="number"
+                    required
+                    value={editBPDiastolic}
+                    onChange={(e) => setEditBPDiastolic(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-transparent"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-600 dark:text-slate-400 block mb-1">Thời điểm đo</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={editBPDate}
+                  onChange={(e) => setEditBPDate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-600 dark:text-slate-400 block mb-1">Nguồn đo</label>
+                <select
+                  value={editBPSource}
+                  onChange={(e) => setEditBPSource(e.target.value as ObservationSource)}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1.5 bg-transparent"
+                >
+                  <option value="self_reported">Tự đo bằng máy đo huyết áp tại nhà</option>
+                  <option value="manual_import">Nhập từ hồ sơ / phiếu khám bác sĩ</option>
+                  <option value="manual_entry">Khác</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-600 dark:text-slate-400 block mb-1">Ghi chú bối cảnh</label>
+                <input
+                  type="text"
+                  value={editBPNotes}
+                  onChange={(e) => setEditBPNotes(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-transparent"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingBP(null)}
+                  className="px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingBP}
+                  className="px-3 py-1.5 rounded-lg font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
+                >
+                  {isUpdatingBP ? 'Đang cập nhật...' : 'Lưu thay đổi'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

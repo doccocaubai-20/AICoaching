@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { LayoutDashboard, Plus, HeartPulse, ArrowRight } from 'lucide-react';
+import { LayoutDashboard, Plus, HeartPulse, ArrowRight, Sparkles } from 'lucide-react';
 import { getSupabaseEnvStatus } from '@/lib/supabase/env';
 import { getAuthenticatedUser } from '@/lib/server/auth-guard';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -41,6 +41,13 @@ export default async function DashboardPage() {
               Dữ liệu tự khai & tổng hợp quá trình vận động cá nhân
             </p>
           </div>
+          <Link
+            href="/passport"
+            className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1 shadow-xs"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Thẻ Passport</span>
+          </Link>
         </div>
 
         {/* Chưa cấu hình Supabase: không hiện 0 buổi / 0 phút, hiện "—" kèm "Chưa có dữ liệu" */}
@@ -149,29 +156,54 @@ export default async function DashboardPage() {
         isConfigured={true}
       />
 
-      {/* Banner Lối Tắt Sang Hồ Sơ Sức Khỏe Toàn Diện V2 */}
-      <Link
-        href="/health"
-        className="block bg-gradient-to-r from-rose-500 to-indigo-600 hover:from-rose-600 hover:to-indigo-700 text-white rounded-2xl p-3.5 shadow-sm transition group"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
-              <HeartPulse className="w-4 h-4 text-white" />
+      {/* Lối tắt Đột Phá: Sức Khỏe V2 & Thẻ Căn Cước Vận Động Athlete Passport */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Link
+          href="/health"
+          className="block bg-gradient-to-r from-rose-500 to-indigo-600 hover:from-rose-600 hover:to-indigo-700 text-white rounded-2xl p-3.5 shadow-sm transition group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+                <HeartPulse className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <p className="text-xs font-bold leading-tight flex items-center gap-1.5">
+                  <span>Hồ Sơ Sức Khỏe V2</span>
+                  <span className="text-[10px] bg-white/25 px-1.5 py-0.2 rounded font-semibold">Mới</span>
+                </p>
+                <p className="text-[10px] text-white/80">
+                  Huyết áp, chấn thương, thuốc & an toàn
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold leading-tight flex items-center gap-1.5">
-                <span>Khám phá Trung Tâm Sức Khỏe V2</span>
-                <span className="text-[10px] bg-white/25 px-1.5 py-0.2 rounded font-semibold">Mới</span>
-              </p>
-              <p className="text-[10px] text-white/80">
-                Theo dõi huyết áp, chấn thương, thuốc & đối chiếu an toàn tập luyện
-              </p>
-            </div>
+            <ArrowRight className="w-4 h-4 text-white/70 group-hover:translate-x-1 transition-transform" />
           </div>
-          <ArrowRight className="w-4 h-4 text-white/70 group-hover:translate-x-1 transition-transform" />
-        </div>
-      </Link>
+        </Link>
+
+        <Link
+          href="/passport"
+          className="block bg-gradient-to-r from-indigo-900 via-slate-900 to-emerald-950 hover:from-indigo-800 hover:to-emerald-900 text-white rounded-2xl p-3.5 shadow-sm border border-emerald-500/30 transition group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 backdrop-blur border border-emerald-400/30 flex items-center justify-center text-emerald-400">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold leading-tight flex items-center gap-1.5">
+                  <span className="text-emerald-300">Athlete Passport</span>
+                  <span className="text-[10px] bg-emerald-500/30 text-emerald-300 px-1.5 py-0.2 rounded font-semibold">Căn Cước</span>
+                </p>
+                <p className="text-[10px] text-slate-300">
+                  Thẻ định danh rèn luyện & mã QR chia sẻ
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-transform" />
+          </div>
+        </Link>
+      </div>
 
       {/* 1. Khối số liệu tổng hợp tuần (tính từ statsActivities, không giới hạn 10 dòng) */}
       <DashboardStatsSection

@@ -11,7 +11,13 @@
 
 export const CURRENT_CONSENT_VERSION = 'v1.0-mvp';
 
-export type ConsentScopeItem = 'profile' | 'goals' | 'activities' | 'observations';
+export type ConsentScopeItem =
+  | 'profile'
+  | 'goals'
+  | 'activities'
+  | 'observations'
+  | 'daily_checkins'
+  | 'blood_pressures';
 
 export interface AIConsentEntity {
   id: string;
