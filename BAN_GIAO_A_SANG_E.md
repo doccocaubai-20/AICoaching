@@ -10,7 +10,7 @@ Cập nhật 27/10/2026. Nền A, hồ sơ/dashboard (B), nhật ký (C) và bu�
 | Bảng AI | `ai_consents`, `ai_summaries`, `ai_conversations`, `ai_messages` đã có, kèm RLS |
 | Dashboard (B) | Đã đọc bản `ai_summaries` mới nhất. Phân biệt nhãn `ai_generated` và "Mẫu tổng hợp (Không dùng AI)" |
 | `/ai` | Còn là khung tĩnh, có hộp "Phụ trách bởi Agent E". E thay toàn bộ trang này |
-| Nhà cung cấp AI | **Chưa chốt** trong PLAN_MVP.md. Mặc định đề xuất ở mục 4; adapter phải đổi được nhà cung cấp |
+| Nhà cung cấp AI | **Google Gemini 3.5 Flash-Lite** (nhóm chốt 27/10/2026). Adapter vẫn phải đổi được nhà cung cấp |
 | `npm run test` / `npx tsc --noEmit` / `npm run build` | 88/88 qua / không lỗi / thành công |
 
 ## 2. Tệp E sở hữu
@@ -19,7 +19,7 @@ Cập nhật 27/10/2026. Nền A, hồ sơ/dashboard (B), nhật ký (C) và bu�
 - `src/components/ai/**`.
 - `src/lib/ai/**`: thư mục mới cho adapter, prompt, dựng ngữ cảnh, kiểm tra đầu ra. A giao riêng thư mục này cho E.
 - `src/tests/agent-e-*.test.ts`.
-- `package.json` / `package-lock.json`: **chỉ để thêm** `@anthropic-ai/sdk` và `zod`, ghi rõ trong báo cáo.
+- `package.json` / `package-lock.json`: **chỉ để thêm** SDK chính thức của Google Gemini và `zod`, ghi rõ trong báo cáo.
 
 **Chỉ đọc, không sửa:** `src/components/dashboard/date-utils.ts`, `src/components/activities/activity-utils.ts`.
 
@@ -65,35 +65,26 @@ Rút đồng ý: đặt `is_granted = false`, `revoked_at = now()`. Từ lần s
 
 ## 4. Nhà cung cấp và cấu hình
 
-**Đề xuất mặc định: Anthropic Claude qua SDK chính thức `@anthropic-ai/sdk`**, gọi **chỉ ở server**.
+**Nhóm đã chọn: Google Gemini, model Gemini 3.5 Flash-Lite**, gọi qua Gemini API **chỉ ở server**.
 
 | Biến môi trường (server, **không** có tiền tố `NEXT_PUBLIC_`) | Giá trị |
 |---|---|
-| `AI_PROVIDER` | `anthropic`. Để trống nghĩa là chưa cấu hình: tóm tắt dùng mẫu, hỏi đáp báo không khả dụng |
-| `AI_API_KEY` | Khóa API. Truyền tường minh `new Anthropic({ apiKey: process.env.AI_API_KEY })`. **Không** ghi vào mã, log hay fixture |
-| `AI_MODEL_NAME` | Mặc định `claude-opus-5-5` |
+| `AI_PROVIDER` | `google`. Để trống nghĩa là chưa cấu hình: tóm tắt dùng mẫu, hỏi đáp báo không khả dụng |
+| `AI_API_KEY` | Khóa Gemini API (tạo trong Google AI Studio). Truyền tường minh vào client của SDK. **Không** ghi vào mã, log hay fixture |
+| `AI_MODEL_NAME` | ID model Gemini 3.5 Flash-Lite. **Lấy đúng chuỗi ID từ tài liệu chính thức của Google** (trang Models của Gemini API) lúc viết mã, không đoán |
 
-**Model và chi phí** (giá niêm yết của Anthropic API, USD / 1 triệu token, đầu vào / đầu ra):
+**Phải tự kiểm chứng với tài liệu chính thức của Google lúc viết mã** (A chưa xác minh các chi tiết dưới đây cho model này):
+- **SDK:** dùng SDK chính thức hiện hành của Google cho JavaScript/TypeScript (Google Gen AI SDK, gói `@google/genai`). Kiểm tra tên gói, cách khởi tạo client và hàm sinh nội dung trên trang tài liệu hoặc repo chính thức. Không dùng thư viện bên thứ ba hay lớp tương thích OpenAI.
+- **Đầu ra có cấu trúc:** dùng cơ chế JSON schema của Gemini (cấu hình kiểu MIME `application/json` kèm schema phản hồi). **Vẫn kiểm tra lại bằng zod ở server**; JSON sai schema thì coi là lỗi.
+- **System prompt:** đặt qua tham số chỉ dẫn hệ thống (system instruction) của SDK, không ghép vào nội dung người dùng.
+- **Lý do dừng / bị chặn:** kiểm tra lý do kết thúc và phản hồi an toàn của Gemini trước khi đọc nội dung. Bị chặn hoặc bị cắt thì coi là lỗi, không bịa nội dung.
+- **Giá, giới hạn tốc độ** (requests/phút, requests/ngày) **và gói miễn phí:** ghi vào báo cáo kèm nguồn.
 
-| Model | ID | Giá | Ghi chú |
-|---|---|---|---|
-| Claude Opus 5.5 | `claude-opus-5-5` | $4 / $20 | **Mặc định**, chất lượng cao nhất trong nhóm thường dùng |
-| Claude Sonnet 5.5 | `claude-sonnet-5-5` | $2 / $10 | Rẻ hơn một nửa |
-| Claude Haiku 5.5 | `claude-haiku-5-5` | $0.10 / $0.50 | Rẻ nhất |
+**Timeout và retry:** tự đặt timeout khoảng 30 giây (AbortController hoặc tùy chọn của SDK) và retry tối đa 1 lần cho lỗi 429 và 5xx. Hết giờ thì báo lỗi, không treo UI. Gói miễn phí có giới hạn requests/phút thấp, nên gặp 429 thì báo "AI đang quá tải, thử lại sau".
 
-Đổi model chỉ cần đổi `AI_MODEL_NAME`. Việc chọn model rẻ hơn là **quyết định của nhóm**, dựa trên số liệu chi phí và chất lượng ở pilot. Dùng đúng chuỗi ID trong bảng, không thêm hậu tố ngày.
+**⚠️ Quyền riêng tư dữ liệu (nhóm phải rà trước khi dùng dữ liệu thật):** theo điều khoản Gemini API mà A biết, nội dung gửi qua **gói miễn phí** có thể được Google dùng để cải thiện sản phẩm và có thể được người xem xét; gói trả phí thì không. Dữ liệu ở đây là hồ sơ sức khỏe và vận động, nên **trước pilot với người thật**, nhóm phải đọc điều khoản hiện hành của Gemini API và quyết định gói sử dụng. Màn hình xin đồng ý phải nói đúng điều này. Khi phát triển chỉ dùng **dữ liệu giả**.
 
-**Cách gọi** (Messages API):
-- **Đầu ra có cấu trúc:** dùng `client.messages.parse()` với `output_config: { format: zodOutputFormat(schema) }` (từ `@anthropic-ai/sdk/helpers/zod`). `parsed_output` có thể là `null`; khi đó coi là lỗi.
-- **Mức suy nghĩ:** trên Claude Opus 5.5 không tắt được thinking (`{type: "disabled"}` trả lỗi 400). Điều chỉnh bằng `output_config.effort`, đặt **tường minh** `low` hoặc `medium` (mặc định của model là `medium`). Không gửi `temperature`, `top_p`, `top_k`.
-- **`max_tokens`:** khoảng 16000 với request không streaming. Đừng đặt quá thấp, vì sẽ bị cắt giữa chừng.
-- **Timeout và retry:** đặt `timeout` (TypeScript tính bằng **mili giây**), ví dụ 30000, và `maxRetries: 1`. Tổng thời gian chờ có thể tới `timeout × (maxRetries + 1)`. Hết giờ thì báo lỗi, không treo UI.
-- **Lỗi:** bắt theo lớp lỗi của SDK, từ cụ thể đến chung: `Anthropic.RateLimitError` → `Anthropic.APIError` (đọc `status`) → lỗi kết nối. Không so khớp chuỗi thông báo lỗi.
-- **`stop_reason`:** luôn kiểm tra trước khi đọc nội dung.
-  - `refusal`: coi là lỗi, hiển thị "AI không trả lời được câu này", không bịa nội dung.
-  - `max_tokens`: coi là lỗi.
-- **Fallback khi bị từ chối:** với Claude Opus 5.5 trên Claude API, nên bật fallback phía server (beta `server-side-fallback-2026-07-01`, `fallbacks: "default"`). Kiểm tra cú pháp với SDK lúc viết mã; nếu `parse()` không hỗ trợ trên endpoint beta thì ghi lại và bỏ qua.
-- Thiết kế adapter theo interface, ví dụ `AIAdapter.summarize(context)` và `AIAdapter.answer(context, question)`, để thay được nhà cung cấp và mock được trong test.
+**Thiết kế adapter theo interface**, ví dụ `AIAdapter.summarize(context)` và `AIAdapter.answer(context, question)`, để đổi được nhà cung cấp và mock được trong test. Mã gọi Gemini chỉ nằm trong `src/lib/ai/providers/gemini.ts` (hoặc tương đương). Phần dựng ngữ cảnh, kiểm tra đầu ra và bản mẫu không phụ thuộc nhà cung cấp.
 
 ## 5. Hai thao tác
 
@@ -222,4 +213,4 @@ Rút đồng ý: đặt `is_granted = false`, `revoked_at = now()`. Từ lần s
 
 > Đọc PLAN_MVP.md, hướng dẫn repo và mã hiện có trước khi sửa. Dùng TypeScript, giao diện tiếng Việt, ưu tiên điện thoại. MVP tập trung hồ sơ, nhật ký và người dùng tương tác AI; không xây chức năng HLV, chia sẻ QR, Strava, dinh dưỡng, thanh toán hoặc video. Nội dung và quy tắc demo phải được gắn nhãn, không khẳng định đã kiểm chứng. Không dùng dữ liệu thật trong fixture/log. Không tự động chẩn đoán, kết luận hồi phục, thay đổi tải hoặc sửa hồ sơ bằng AI. Không commit/deploy hay gửi dữ liệu ra dịch vụ ngoài nếu chưa được giao; không ghi bí mật vào mã. Thiếu credential thì hoàn thành phần độc lập và báo rõ. Chạy kiểm tra phù hợp; bàn giao hành vi, tệp sửa, lệnh và kết quả, phụ thuộc, giới hạn. Không ghi đè thay đổi người khác.
 >
-> Bạn là agent E. Đọc BAN_GIAO_A_SANG_E.md và README.md mục 3–5. Xây adapter gọi AI thật từ server (mặc định Anthropic Claude qua `@anthropic-ai/sdk`, model từ `AI_MODEL_NAME`, mặc định `claude-opus-5-5`; khóa chỉ ở server) với hai thao tác: (1) tóm tắt hồ sơ và (2) hỏi đáp tiếng Việt theo hồ sơ. Câu trả lời dùng đầu ra có cấu trúc, nêu ID bản ghi hoặc khoảng thời gian tham chiếu (server loại ID không có trong dữ liệu đã gửi), chỉ ra thiếu thông tin và không bịa. UI giải thích và xin đồng ý trước lần gửi, cho xem/xóa lịch sử, rút lại để ngăn các lần gửi sau (server kiểm tra đồng ý trước mỗi lần gọi). Dựng ngữ cảnh tối thiểu ở server theo mục 3; ghi chú và câu hỏi là dữ liệu không đáng tin, đặt trong khối dữ liệu riêng, không phải chỉ dẫn hệ thống (mục 6). Không chẩn đoán, tự đổi kế hoạch hay sửa hồ sơ; không truyền công cụ ghi cho AI. Tóm tắt lỗi hoặc thiếu khóa thì lưu và hiển thị bản tổng hợp theo mẫu có nhãn "Không dùng AI"; hỏi đáp lỗi thì thông báo và cho thử lại, không giả làm AI. Ghi `ai_summaries`/`ai_messages` bằng client admin sau `requireAuthenticatedUser()`, luôn đặt `user_id` từ phiên. Không log nội dung nhạy cảm; chỉ log số token, độ trễ, model, mã lỗi. Chỉ sửa các tệp ở mục 2; cần đổi schema/contract thì đề xuất cho A. Kiểm tra theo mục 8, phân biệt rõ kiểm tra mock với gọi nhà cung cấp thật, rồi ghi báo cáo vào BAN_GIAO_E.md.
+> Bạn là agent E. Đọc BAN_GIAO_A_SANG_E.md và README.md mục 3–5. Xây adapter gọi AI thật từ server (Google Gemini 3.5 Flash-Lite qua SDK chính thức của Google; ID model lấy từ tài liệu chính thức và đặt trong `AI_MODEL_NAME`; khóa chỉ ở server; kiểm chứng SDK, structured output và điều khoản dữ liệu theo mục 4) với hai thao tác: (1) tóm tắt hồ sơ và (2) hỏi đáp tiếng Việt theo hồ sơ. Câu trả lời dùng đầu ra có cấu trúc, nêu ID bản ghi hoặc khoảng thời gian tham chiếu (server loại ID không có trong dữ liệu đã gửi), chỉ ra thiếu thông tin và không bịa. UI giải thích và xin đồng ý trước lần gửi, cho xem/xóa lịch sử, rút lại để ngăn các lần gửi sau (server kiểm tra đồng ý trước mỗi lần gọi). Dựng ngữ cảnh tối thiểu ở server theo mục 3; ghi chú và câu hỏi là dữ liệu không đáng tin, đặt trong khối dữ liệu riêng, không phải chỉ dẫn hệ thống (mục 6). Không chẩn đoán, tự đổi kế hoạch hay sửa hồ sơ; không truyền công cụ ghi cho AI. Tóm tắt lỗi hoặc thiếu khóa thì lưu và hiển thị bản tổng hợp theo mẫu có nhãn "Không dùng AI"; hỏi đáp lỗi thì thông báo và cho thử lại, không giả làm AI. Ghi `ai_summaries`/`ai_messages` bằng client admin sau `requireAuthenticatedUser()`, luôn đặt `user_id` từ phiên. Không log nội dung nhạy cảm; chỉ log số token, độ trễ, model, mã lỗi. Chỉ sửa các tệp ở mục 2; cần đổi schema/contract thì đề xuất cho A. Kiểm tra theo mục 8, phân biệt rõ kiểm tra mock với gọi nhà cung cấp thật, rồi ghi báo cáo vào BAN_GIAO_E.md.
