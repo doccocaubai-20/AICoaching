@@ -26,6 +26,7 @@ P0 cần để chứng minh vòng sử dụng; P1 bổ sung sau khi P0 chạy. T
 | P0 | Hỏi đáp AI theo hồ sơ | Người dùng đặt câu hỏi như “Tuần này tôi đã ghi những hoạt động nào?”. AI trả lời dựa trên phần hồ sơ được phép, dẫn các bản ghi hoặc khoảng thời gian dùng và nói rõ khi thiếu dữ liệu. Không tự sửa hồ sơ. Khi AI lỗi, thông báo và cho thử lại; không giả lập câu trả lời AI. |
 | P0 | Calisthenics | Một nội dung/buổi tập mẫu, ghi kết quả và cập nhật hồ sơ. Khi chưa có nguồn chuyên môn đủ căn cứ, gắn nhãn minh họa và chỉ dùng trong demo; không công bố là giáo án đã xác thực. |
 | P1 | Xem lại lịch nhiều hoạt động | Hiển thị các hoạt động gần nhau và gợi ý xem lại lịch theo quy tắc được nêu rõ; nêu dữ liệu tham chiếu, không tự đổi tải hay kết luận phục hồi. Ngưỡng chưa có căn cứ chỉ dùng cho demo. |
+| P1 | Phân tích xu hướng hồ sơ | Sau khi tóm tắt/hỏi đáp chạy ổn. Mã TypeScript tính chỉ số mô tả (tần suất, độ đều, kế hoạch so với thực tế, lịch rảnh so với giờ tập, cơ cấu môn, xu hướng mức mệt tự khai, tiến độ mục tiêu từ kết quả tự ghi, tỷ lệ dữ liệu thiếu); AI chỉ diễn giải và chọn điểm nổi bật, mỗi nhận định trích bản ghi hoặc khoảng thời gian. Không kết luận sức khỏe/phục hồi, không chấm điểm, không khuyên đổi tải, không suy luận nhân quả. Lỗi AI thì hiển thị chỉ số tính bằng mã có nhãn không dùng AI. |
 | P2 | Sau MVP | Chia sẻ hồ sơ cho HLV, phản hồi HLV và QR; AI phân tích video; dinh dưỡng/calo; Strava/wearable; nhiều chương trình; thanh toán; app native. |
 
 MVP không phụ thuộc vào việc tìm HLV để xây ứng dụng và kiểm chứng trải nghiệm hồ sơ, nhật ký, AI với người dùng thật. Có thể pilot các chức năng này bằng dữ liệu người dùng tự cung cấp và đồng ý chia sẻ với AI. Nội dung tập và quy tắc chưa có căn cứ chỉ dùng tình huống minh họa; trước khi giới thiệu cho người dùng tập theo hoặc đưa khuyến nghị cá nhân, cần rà soát nội dung dựa trên nguồn chuyên môn phù hợp và xác định phạm vi sử dụng. Không mặc định AI tạo nội dung là đã được kiểm chứng.
@@ -49,6 +50,7 @@ Người phụ trách nền chốt schema và types trước khi giao song song.
 - Program/session/result: chủ sở hữu, phiên bản nội dung, trạng thái minh họa hoặc đã rà soát, kết quả tự khai, thời điểm; chống ghi trùng.
 - Review suggestion: user_id, trạng thái, lý do, IDs hoạt động tham chiếu, phiên bản quy tắc, thời điểm; đánh dấu cũ khi dữ liệu thay đổi.
 - AI summary: user_id, phạm vi đầu vào, thời điểm, trạng thái AI hoặc mẫu, nội dung, dữ liệu thiếu và tham chiếu bản ghi; là ảnh chụp và cho phép tạo lại.
+- AI analysis (P1): dùng chung bảng AI summary, phân biệt bằng `input_scope.kind = "analysis"`; lưu kèm chỉ số đã tính bằng mã trong `input_scope.metrics`.
 - AI conversation/message: user_id, vai trò, nội dung, created_at, trạng thái và nguồn tham chiếu; người dùng xem/xóa lịch sử theo thiết kế. Khi nguồn thay đổi, câu trả lời cũ giữ ngày tạo và không được trình bày là dữ liệu mới nhất.
 - AI consent: user_id, phiên bản nội dung đồng ý, phạm vi và thời điểm; hành động rút lại không gửi thêm dữ liệu cho các yêu cầu sau.
 

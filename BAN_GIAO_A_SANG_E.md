@@ -1,6 +1,6 @@
 # Bàn giao A → E (AI tóm tắt và hỏi đáp theo hồ sơ)
 
-Cập nhật 27/10/2026. Nền A, hồ sơ/dashboard (B), nhật ký (C) và buổi tập minh họa (D) đã xong, đã được rà soát và commit. E xây hai thao tác AI: **tóm tắt hồ sơ** và **hỏi đáp theo hồ sơ**.
+Cập nhật 27/10/2026. Nền A, hồ sơ/dashboard (B), nhật ký (C) và buổi tập minh họa (D) đã xong, đã được rà soát và commit. E xây hai thao tác AI P0: **tóm tắt hồ sơ** và **hỏi đáp theo hồ sơ**; sau đó thêm **phân tích xu hướng** (P1, mục 5.3).
 
 ## 1. Trạng thái hiện tại
 
@@ -130,6 +130,26 @@ Rút đồng ý: đặt `is_granted = false`, `revoked_at = now()`. Từ lần s
   - câu trả lời cũ giữ ngày tạo, không được trình bày là dữ liệu mới nhất.
 - **Gửi lại lịch sử:** chỉ gửi số lượt gần nhất cần thiết, ví dụ 6 lượt.
 
+### 5.3 Phân tích xu hướng hồ sơ (P1, làm sau khi 5.1 và 5.2 chạy ổn)
+
+**Nguyên tắc: số liệu do mã tính, AI chỉ diễn giải.**
+
+- **Hàm thuần TypeScript** trong `src/lib/ai/`, ví dụ `computeProfileMetrics(records, period)`, tính từ dữ liệu ở mục 3:
+  - tần suất và độ đều đặn theo tuần (tuần không có bản ghi ghi là "không có bản ghi", **không** phải "không tập");
+  - kế hoạch so với thực tế (`is_planned`);
+  - lịch rảnh khai trong hồ sơ so với giờ thực tế đã ghi (giờ Việt Nam);
+  - cơ cấu thời lượng theo môn;
+  - xu hướng mức mệt tự khai theo môn, chỉ khi đủ số điểm dữ liệu tối thiểu (ngưỡng ghi rõ trong mã);
+  - tiến độ mục tiêu từ kết quả buổi tập tự ghi (`session_results`), nếu có;
+  - tỷ lệ dữ liệu thiếu cho từng trường.
+  Mỗi chỉ số kèm danh sách ID bản ghi đã dùng. Thiếu dữ liệu thì trả "chưa đủ dữ liệu", không suy ra giá trị.
+- **Gửi AI** các chỉ số đã tính (và ID), không gửi lại toàn bộ bản ghi nếu không cần. AI trả đầu ra có cấu trúc: `highlights[]` (mỗi điểm có `text`, `metric_key`, `references[]`), `missing_data[]`, `period`. Server kiểm tra `metric_key` và ID tham chiếu phải có trong dữ liệu đã gửi; con số AI viết ra phải khớp chỉ số (so sánh với giá trị đã tính, lệch thì loại điểm đó).
+- **Giới hạn nội dung:** chỉ mô tả. Không kết luận sức khỏe, quá tải hay phục hồi; không chấm điểm thể lực; không khuyên tăng/giảm tải hay đổi lịch; không suy luận nhân quả (chỉ được nói "xảy ra gần nhau").
+- **Lưu** vào `ai_summaries` với `input_scope.kind = "analysis"`, `input_scope.metrics` là chỉ số đã tính, `status` như mục 5.1. Không cần đổi schema.
+- **Khi AI lỗi hoặc thiếu khóa:** hiển thị chính các chỉ số đã tính bằng mã, nhãn **"Số liệu tính tự động – Không dùng AI"**.
+- **UI:** mục "Phân tích xu hướng" trên `/ai`, chọn khoảng 4 tuần hoặc 8 tuần, mỗi điểm nổi bật bấm được sang bản ghi nguồn.
+- **Test:** `computeProfileMetrics` với dữ liệu đủ, thiếu, tuần trống, lịch dự kiến, chạy được với `TZ=UTC`; AI trả số sai thì điểm đó bị loại; AI trả `metric_key` lạ thì bị loại.
+
 ## 6. An toàn prompt và dữ liệu
 
 - **Dữ liệu không đáng tin:** `notes` của hoạt động và chỉ số, nội dung mục tiêu, câu hỏi của người dùng đều là **dữ liệu**, không phải chỉ dẫn.
@@ -213,4 +233,4 @@ Rút đồng ý: đặt `is_granted = false`, `revoked_at = now()`. Từ lần s
 
 > Đọc PLAN_MVP.md, hướng dẫn repo và mã hiện có trước khi sửa. Dùng TypeScript, giao diện tiếng Việt, ưu tiên điện thoại. MVP tập trung hồ sơ, nhật ký và người dùng tương tác AI; không xây chức năng HLV, chia sẻ QR, Strava, dinh dưỡng, thanh toán hoặc video. Nội dung và quy tắc demo phải được gắn nhãn, không khẳng định đã kiểm chứng. Không dùng dữ liệu thật trong fixture/log. Không tự động chẩn đoán, kết luận hồi phục, thay đổi tải hoặc sửa hồ sơ bằng AI. Không commit/deploy hay gửi dữ liệu ra dịch vụ ngoài nếu chưa được giao; không ghi bí mật vào mã. Thiếu credential thì hoàn thành phần độc lập và báo rõ. Chạy kiểm tra phù hợp; bàn giao hành vi, tệp sửa, lệnh và kết quả, phụ thuộc, giới hạn. Không ghi đè thay đổi người khác.
 >
-> Bạn là agent E. Đọc BAN_GIAO_A_SANG_E.md và README.md mục 3–5. Xây adapter gọi AI thật từ server (Google Gemini 3.5 Flash-Lite qua SDK chính thức của Google; ID model lấy từ tài liệu chính thức và đặt trong `AI_MODEL_NAME`; khóa chỉ ở server; kiểm chứng SDK, structured output và điều khoản dữ liệu theo mục 4) với hai thao tác: (1) tóm tắt hồ sơ và (2) hỏi đáp tiếng Việt theo hồ sơ. Câu trả lời dùng đầu ra có cấu trúc, nêu ID bản ghi hoặc khoảng thời gian tham chiếu (server loại ID không có trong dữ liệu đã gửi), chỉ ra thiếu thông tin và không bịa. UI giải thích và xin đồng ý trước lần gửi, cho xem/xóa lịch sử, rút lại để ngăn các lần gửi sau (server kiểm tra đồng ý trước mỗi lần gọi). Dựng ngữ cảnh tối thiểu ở server theo mục 3; ghi chú và câu hỏi là dữ liệu không đáng tin, đặt trong khối dữ liệu riêng, không phải chỉ dẫn hệ thống (mục 6). Không chẩn đoán, tự đổi kế hoạch hay sửa hồ sơ; không truyền công cụ ghi cho AI. Tóm tắt lỗi hoặc thiếu khóa thì lưu và hiển thị bản tổng hợp theo mẫu có nhãn "Không dùng AI"; hỏi đáp lỗi thì thông báo và cho thử lại, không giả làm AI. Ghi `ai_summaries`/`ai_messages` bằng client admin sau `requireAuthenticatedUser()`, luôn đặt `user_id` từ phiên. Không log nội dung nhạy cảm; chỉ log số token, độ trễ, model, mã lỗi. Chỉ sửa các tệp ở mục 2; cần đổi schema/contract thì đề xuất cho A. Kiểm tra theo mục 8, phân biệt rõ kiểm tra mock với gọi nhà cung cấp thật, rồi ghi báo cáo vào BAN_GIAO_E.md.
+> Bạn là agent E. Đọc BAN_GIAO_A_SANG_E.md và README.md mục 3–5. Xây adapter gọi AI thật từ server (Google Gemini 3.5 Flash-Lite qua SDK chính thức của Google; ID model lấy từ tài liệu chính thức và đặt trong `AI_MODEL_NAME`; khóa chỉ ở server; kiểm chứng SDK, structured output và điều khoản dữ liệu theo mục 4) với hai thao tác: (1) tóm tắt hồ sơ và (2) hỏi đáp tiếng Việt theo hồ sơ. Sau khi hai thao tác này chạy ổn, làm thêm (3) phân tích xu hướng hồ sơ (P1) theo mục 5.3: chỉ số do mã TypeScript tính, AI chỉ diễn giải và trích nguồn, server kiểm tra số và ID. Câu trả lời dùng đầu ra có cấu trúc, nêu ID bản ghi hoặc khoảng thời gian tham chiếu (server loại ID không có trong dữ liệu đã gửi), chỉ ra thiếu thông tin và không bịa. UI giải thích và xin đồng ý trước lần gửi, cho xem/xóa lịch sử, rút lại để ngăn các lần gửi sau (server kiểm tra đồng ý trước mỗi lần gọi). Dựng ngữ cảnh tối thiểu ở server theo mục 3; ghi chú và câu hỏi là dữ liệu không đáng tin, đặt trong khối dữ liệu riêng, không phải chỉ dẫn hệ thống (mục 6). Không chẩn đoán, tự đổi kế hoạch hay sửa hồ sơ; không truyền công cụ ghi cho AI. Tóm tắt lỗi hoặc thiếu khóa thì lưu và hiển thị bản tổng hợp theo mẫu có nhãn "Không dùng AI"; hỏi đáp lỗi thì thông báo và cho thử lại, không giả làm AI. Ghi `ai_summaries`/`ai_messages` bằng client admin sau `requireAuthenticatedUser()`, luôn đặt `user_id` từ phiên. Không log nội dung nhạy cảm; chỉ log số token, độ trễ, model, mã lỗi. Chỉ sửa các tệp ở mục 2; cần đổi schema/contract thì đề xuất cho A. Kiểm tra theo mục 8, phân biệt rõ kiểm tra mock với gọi nhà cung cấp thật, rồi ghi báo cáo vào BAN_GIAO_E.md.
