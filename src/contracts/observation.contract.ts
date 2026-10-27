@@ -33,7 +33,7 @@ export interface CreateObservationInput {
 export function validateObservationInput(input: Partial<CreateObservationInput>): { is_valid: boolean; errors: Record<string, string> } {
   const errors: Record<string, string> = {};
 
-  const validTypes: MetricType[] = ['weight', 'height', 'resting_heart_rate', 'body_feel', 'other'];
+  const validTypes: MetricType[] = ['weight', 'height', 'resting_heart_rate', 'body_feel', 'waist_circumference', 'other'];
   if (!input.metric_type || !validTypes.includes(input.metric_type)) {
     errors.metric_type = 'Loại chỉ số không hợp lệ.';
   }

@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { LayoutDashboard, Plus } from 'lucide-react';
+import { LayoutDashboard, Plus, HeartPulse, ArrowRight } from 'lucide-react';
 import { getSupabaseEnvStatus } from '@/lib/supabase/env';
 import { getAuthenticatedUser } from '@/lib/server/auth-guard';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -11,11 +11,13 @@ import { DashboardGoalsSection } from '@/components/dashboard/DashboardGoalsSect
 import { DashboardMetricsSection } from '@/components/dashboard/DashboardMetricsSection';
 import { DashboardActivitiesSection } from '@/components/dashboard/DashboardActivitiesSection';
 import { DashboardAISummaryCard } from '@/components/dashboard/DashboardAISummaryCard';
+import { QuickCheckinWidget } from '@/components/health/QuickCheckinWidget';
 import {
   GoalEntity,
   ObservationEntity,
   ActivityEntity,
   AISummaryEntity,
+  DailyCheckinEntity,
 } from '@/contracts';
 
 export default async function DashboardPage() {
@@ -62,9 +64,11 @@ export default async function DashboardPage() {
     redirect('/login');
   }
 
-  // Chuẩn bị mốc 7 ngày cho thống kê
+  // Chuẩn bị mốc 7 ngày cho thống kê và ngày hôm nay (UTC+7)
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const nowVN = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const todayDateStr = nowVN.toISOString().slice(0, 10);
 
   // 3. Tải song song dữ liệu từ database qua RLS
   // Tách riêng truy vấn thống kê 7 ngày: is_planned = false, start_at trong 7 ngày gần nhất, không giới hạn số dòng.
@@ -75,6 +79,7 @@ export default async function DashboardPage() {
     activitiesRes,
     statsActivitiesRes,
     aiSummaryRes,
+    todayCheckinRes,
   ] = await Promise.all([
     supabase.from('profiles').select('display_name').eq('user_id', user.id).maybeSingle(),
     supabase.from('goals').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -95,6 +100,12 @@ export default async function DashboardPage() {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from('daily_checkins')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('local_date', todayDateStr)
+      .maybeSingle(),
   ]);
 
   const displayName =
@@ -107,6 +118,7 @@ export default async function DashboardPage() {
   const recentActivities = (activitiesRes.data as ActivityEntity[]) || [];
   const statsActivities = (statsActivitiesRes.data as ActivityEntity[]) || [];
   const latestSummary = (aiSummaryRes.data as AISummaryEntity) || null;
+  const todayCheckin = (todayCheckinRes.data as DailyCheckinEntity) || null;
 
   return (
     <div className="p-4 space-y-4">
@@ -129,6 +141,37 @@ export default async function DashboardPage() {
           <span>Ghi hoạt động</span>
         </Link>
       </div>
+
+      {/* Micro-interaction Đột Phá: Check-in Sinh Hoạt Nhanh 10 Giây */}
+      <QuickCheckinWidget
+        todayCheckin={todayCheckin}
+        todayDateStr={todayDateStr}
+        isConfigured={true}
+      />
+
+      {/* Banner Lối Tắt Sang Hồ Sơ Sức Khỏe Toàn Diện V2 */}
+      <Link
+        href="/health"
+        className="block bg-gradient-to-r from-rose-500 to-indigo-600 hover:from-rose-600 hover:to-indigo-700 text-white rounded-2xl p-3.5 shadow-sm transition group"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+              <HeartPulse className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <p className="text-xs font-bold leading-tight flex items-center gap-1.5">
+                <span>Khám phá Trung Tâm Sức Khỏe V2</span>
+                <span className="text-[10px] bg-white/25 px-1.5 py-0.2 rounded font-semibold">Mới</span>
+              </p>
+              <p className="text-[10px] text-white/80">
+                Theo dõi huyết áp, chấn thương, thuốc & đối chiếu an toàn tập luyện
+              </p>
+            </div>
+          </div>
+          <ArrowRight className="w-4 h-4 text-white/70 group-hover:translate-x-1 transition-transform" />
+        </div>
+      </Link>
 
       {/* 1. Khối số liệu tổng hợp tuần (tính từ statsActivities, không giới hạn 10 dòng) */}
       <DashboardStatsSection
