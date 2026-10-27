@@ -1,14 +1,16 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
+import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   CalendarCheck2,
   Dumbbell,
   BotMessageSquare,
-  UserCheck
+  UserCheck,
+  Loader2,
+  type LucideIcon,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -18,6 +20,16 @@ const NAV_ITEMS = [
   { href: '/ai', label: 'Trợ lý AI', icon: BotMessageSquare },
   { href: '/profile', label: 'Hồ sơ', icon: UserCheck },
 ];
+
+// Phải nằm bên trong <Link> để useLinkStatus biết link này đang chuyển trang.
+// Đổi icon thành vòng quay ngay khi bấm, trước cả khi server trả về khung trang.
+function NavItemIcon({ icon: Icon, isActive }: { icon: LucideIcon; isActive: boolean }) {
+  const { pending } = useLinkStatus();
+  if (pending) {
+    return <Loader2 aria-label="Đang chuyển trang" className="w-5 h-5 animate-spin text-emerald-600 dark:text-emerald-400" />;
+  }
+  return <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />;
+}
 
 export function BottomNav() {
   const pathname = usePathname();
@@ -29,7 +41,6 @@ export function BottomNav() {
     >
       <div className="max-w-[480px] mx-auto grid grid-cols-5 h-16">
         {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
           const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
 
           return (
@@ -42,7 +53,7 @@ export function BottomNav() {
                   : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
-              <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+              <NavItemIcon icon={item.icon} isActive={isActive} />
               <span className="truncate max-w-[64px]">{item.label}</span>
             </Link>
           );

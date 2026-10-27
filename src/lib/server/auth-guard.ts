@@ -8,6 +8,7 @@
  * 3. Ngăn chặn triệt để hành vi can thiệp dữ liệu chéo giữa các tài khoản.
  */
 
+import { cache } from 'react';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getSupabaseEnvStatus } from '@/lib/supabase/env';
 
@@ -32,7 +33,8 @@ export class ForbiddenOwnershipError extends Error {
   }
 }
 
-export async function getAuthenticatedUser() {
+// cache(): layout và page trong cùng một request dùng chung một lần gọi Supabase Auth
+export const getAuthenticatedUser = cache(async function getAuthenticatedUser() {
   const envStatus = getSupabaseEnvStatus();
   if (!envStatus.isConfigured) {
     return {
@@ -66,7 +68,7 @@ export async function getAuthenticatedUser() {
     error: null,
     envStatus,
   };
-}
+});
 
 export async function requireAuthenticatedUser() {
   const { user, error, envStatus } = await getAuthenticatedUser();

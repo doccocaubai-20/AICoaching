@@ -90,15 +90,20 @@ Tất cả bảng trong cơ sở dữ liệu đều được thiết kế theo n
 - `supabase/migrations/20261027000004_activity_duration_review_dedupe.sql`: hoạt động tối đa 1440 phút; chặn trùng gợi ý xem lại lịch còn hiệu lực (cùng user, phiên bản quy tắc, bộ hoạt động đã sắp xếp).
 - Dữ liệu bài tập minh họa: `supabase/seed_demo.sql`
 
-Repo chưa có `supabase/config.toml`. Lần đầu dùng Supabase CLI:
-```bash
-npx supabase init
-```
-Sau đó trong `supabase/config.toml` đặt `[db.seed]` → `sql_paths = ["./seed_demo.sql"]`, rồi:
+Supabase CLI đã có trong devDependencies và `supabase/config.toml` đã cấu hình seed `seed_demo.sql`. Cần Docker Desktop đang chạy:
 ```bash
 npx supabase start
 npx supabase db reset
 ```
+Lấy URL và khóa local cho `.env.local` (khóa local là khóa demo mặc định của Supabase CLI, không phải bí mật thật):
+```bash
+npx supabase status -o env
+```
+Kiểm tra RLS trên Supabase local:
+```bash
+docker exec -i supabase_db_CalisCoaching psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/rls_ownership_test.sql
+```
+Dừng: `npx supabase stop`.
 Với Supabase Cloud: chạy lần lượt các tệp migration theo thứ tự tên rồi `seed_demo.sql` trong SQL Editor.
 
 ### Kiểm tra bảo mật RLS giữa các tài khoản:
@@ -113,7 +118,8 @@ Kịch bản thực hiện:
 > [!IMPORTANT]
 > **Điều kiện kiểm thử:**
 > - **Đã chạy:** `src/tests/rls-pglite.test.ts` áp dụng cả hai migration và seed lên Postgres (PGlite) với schema `auth` dựng lại tối thiểu (auth.users, auth.uid(), role anon/authenticated/service_role). Kiểm: cô lập đọc/sửa/xóa, chặn chèn mạo danh, chống ghi trùng, bản ghi con cùng chủ, bảng AI chỉ ghi từ server, đánh dấu gợi ý cũ. `rls_ownership_test.sql` cũng chạy qua trên cùng môi trường này.
-> - **Chưa chạy:** trên Supabase thật (local CLI hoặc Cloud). Cần chạy `rls_ownership_test.sql` ở đó trước pilot.
+> - **Đã chạy trên Supabase Cloud (dự án test, 27/10/2026):** 5 migration + seed bằng `npx supabase db push --linked --include-seed`; `rls_ownership_test.sql` đạt qua `npx supabase db query --linked -f supabase/tests/rls_ownership_test.sql` (lỗi trong script trả về mã lỗi, rollback không để lại dữ liệu); 12/12 bảng bật RLS; `npx supabase db advisors --linked` không còn cảnh báo bảo mật, chỉ còn cảnh báo hiệu năng `auth_rls_initplan`.
+> - **Chưa chạy:** luồng đăng ký/đăng nhập bằng tài khoản thật qua giao diện.
 > - `src/tests/rls-rules.test.ts` chỉ dò văn bản SQL, không phải kiểm chứng RLS.
 
 ---
