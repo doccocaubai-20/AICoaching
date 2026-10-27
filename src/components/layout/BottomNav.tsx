@@ -9,12 +9,14 @@ import {
   Dumbbell,
   BotMessageSquare,
   UserCheck,
+  HeartPulse,
   Loader2,
   type LucideIcon,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
+  { href: '/health', label: 'Sức khỏe', icon: HeartPulse },
   { href: '/activities', label: 'Nhật ký', icon: CalendarCheck2 },
   { href: '/programs', label: 'Tập luyện', icon: Dumbbell },
   { href: '/ai', label: 'Trợ lý AI', icon: BotMessageSquare },
@@ -39,7 +41,7 @@ export function BottomNav() {
       aria-label="Điều hướng chính"
       className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800"
     >
-      <div className="max-w-[480px] mx-auto grid grid-cols-5 h-16">
+      <div className="max-w-[480px] mx-auto grid grid-cols-6 h-16">
         {NAV_ITEMS.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
 

@@ -13,3 +13,8 @@ export * from './review.contract';
 export * from './consent.contract';
 export * from './ai.contract';
 export * from './idempotency';
+export * from './health-profile.contract';
+export * from './blood-pressure.contract';
+export * from './daily-checkin.contract';
+export * from './medical.contract';
+export * from './health-document.contract';

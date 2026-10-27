@@ -83,7 +83,7 @@ export default function HomePage() {
               Hồ sơ & Mục tiêu
             </h3>
             <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-              Lưu dụng cụ, lịch rảnh, chỉ số tự khai (Agent B)
+              Lưu dụng cụ, lịch rảnh, chỉ số tự khai
             </p>
           </Link>
 
@@ -98,7 +98,7 @@ export default function HomePage() {
               Nhật ký đa môn
             </h3>
             <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-              Calisthenics, chạy, cầu lông, đi bộ (Agent C)
+              Calisthenics, chạy, cầu lông, đi bộ
             </p>
           </Link>
 
@@ -113,7 +113,7 @@ export default function HomePage() {
               Tập luyện Demo
             </h3>
             <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-              Buổi tập minh họa calisthenics (Agent D)
+              Buổi tập minh họa calisthenics
             </p>
           </Link>
 
@@ -128,7 +128,7 @@ export default function HomePage() {
               Trợ lý AI hồ sơ
             </h3>
             <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-              Tóm tắt & hỏi đáp có trích dẫn nguồn (Agent E)
+              Tóm tắt &amp; hỏi đáp có trích dẫn nguồn
             </p>
           </Link>
         </div>
