@@ -6,10 +6,11 @@ import { parseExercises } from './program-utils';
 interface SessionCardProps {
   session: SessionEntity;
   onRecordResult: (session: SessionEntity) => void;
+  onStartLive?: (session: SessionEntity) => void;
   isConfigured: boolean;
 }
 
-export function SessionCard({ session, onRecordResult, isConfigured }: SessionCardProps) {
+export function SessionCard({ session, onRecordResult, onStartLive, isConfigured }: SessionCardProps) {
   const exercises = parseExercises(session.exercises);
 
   return (
@@ -55,16 +56,31 @@ export function SessionCard({ session, onRecordResult, isConfigured }: SessionCa
         ))}
       </div>
 
-      {/* Nút bắt đầu ghi kết quả */}
-      <button
-        type="button"
-        disabled={!isConfigured}
-        onClick={() => onRecordResult(session)}
-        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 transition shadow-xs disabled:opacity-50"
-      >
-        <PlayCircle className="w-4 h-4" />
-        <span>Ghi nhận kết quả buổi tập</span>
-      </button>
+      {/* 2 Nút hành động: Bắt đầu tập Live (Đột phá) & Ghi nhanh */}
+      <div className="grid grid-cols-2 gap-2 pt-1">
+        {onStartLive && (
+          <button
+            type="button"
+            disabled={!isConfigured}
+            onClick={() => onStartLive(session)}
+            className="py-2.5 px-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm disabled:opacity-50"
+          >
+            <span className="text-sm">⚡</span>
+            <span>Tập Live Này</span>
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={!isConfigured}
+          onClick={() => onRecordResult(session)}
+          className={`py-2.5 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 transition disabled:opacity-50 ${
+            !onStartLive ? 'col-span-2 bg-emerald-600 text-white' : ''
+          }`}
+        >
+          <PlayCircle className="w-4 h-4 text-emerald-600" />
+          <span>Ghi kết quả</span>
+        </button>
+      </div>
     </div>
   );
 }

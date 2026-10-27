@@ -10,9 +10,11 @@ import {
 import { ProgramHeader } from './ProgramHeader';
 import { SessionCard } from './SessionCard';
 import { SessionResultModal } from './SessionResultModal';
+import { LiveWorkoutModal } from './LiveWorkoutModal';
 import { SessionHistoryList } from './SessionHistoryList';
 import { ReviewSuggestionsSection } from '@/components/review/ReviewSuggestionsSection';
 import { AlertCircle, CalendarCheck2 } from 'lucide-react';
+import { recordSessionResultAction } from '@/app/programs/actions';
 
 interface ProgramsManagerProps {
   program: ProgramEntity | null;
@@ -39,6 +41,7 @@ export function ProgramsManager({
 }: ProgramsManagerProps) {
   const [selectedSession, setSelectedSession] = useState<SessionEntity | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [liveSession, setLiveSession] = useState<SessionEntity | null>(null);
 
   const handleOpenRecord = (session: SessionEntity) => {
     setSelectedSession(session);
@@ -48,6 +51,29 @@ export function ProgramsManager({
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedSession(null);
+  };
+
+  const handleStartLive = (session: SessionEntity) => {
+    setLiveSession(session);
+  };
+
+  const handleFinishLiveWorkout = async (data: {
+    durationMinutes: number;
+    perceivedExertion: number;
+    notes: string;
+    completedExercises: Array<{ name: string; sets_completed: number; notes?: string }>;
+  }) => {
+    if (!liveSession) return;
+    const formData = new FormData();
+    formData.append('session_id', liveSession.id);
+    formData.append('completed_at', new Date().toISOString());
+    formData.append('duration_minutes', String(data.durationMinutes));
+    formData.append('perceived_exertion', String(data.perceivedExertion));
+    formData.append('notes', data.notes);
+    formData.append('idempotency_key', crypto.randomUUID());
+    formData.append('completed_exercises', JSON.stringify(data.completedExercises));
+
+    await recordSessionResultAction(null, formData);
   };
 
   return (
@@ -88,6 +114,7 @@ export function ProgramsManager({
                 key={session.id}
                 session={session}
                 onRecordResult={handleOpenRecord}
+                onStartLive={handleStartLive}
                 isConfigured={isConfigured}
               />
             ))}
@@ -116,6 +143,15 @@ export function ProgramsManager({
         session={selectedSession}
         isConfigured={isConfigured}
       />
+
+      {/* 6. Live Workout Companion Modal (Trực Tiếp Có Bấm Giờ Nghỉ & Âm Thanh) */}
+      {liveSession && (
+        <LiveWorkoutModal
+          session={liveSession}
+          onFinishWorkout={handleFinishLiveWorkout}
+          onClose={() => setLiveSession(null)}
+        />
+      )}
     </div>
   );
 }
