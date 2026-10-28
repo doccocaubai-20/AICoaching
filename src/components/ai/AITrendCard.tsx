@@ -188,33 +188,35 @@ export function AITrendCard({ trendSummary, hasConsent, loadError }: AITrendCard
             <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2.5">
               <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1">
                 <BarChart3 className="w-3.5 h-3.5 text-purple-600" />
-                <span>Chỉ số đo lường ({storedMetrics.period.weeks} tuần):</span>
+                <span>Chỉ số đo lường ({storedMetrics.period?.weeks ?? weeks} tuần):</span>
               </span>
 
               {/* Tần suất theo tuần */}
-              <div className="space-y-1">
-                <span className="text-[10px] text-slate-500 font-medium">Tần suất theo tuần:</span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {storedMetrics.weekly_frequency.map((wf) => (
-                    <div
-                      key={wf.week_number}
-                      className="p-1.5 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 text-[10px] flex items-center justify-between"
-                    >
-                      <span className="text-slate-600 dark:text-slate-400">{wf.label}:</span>
-                      {wf.has_records ? (
-                        <span className="font-semibold text-purple-600 dark:text-purple-400">
-                          {wf.session_count} buổi
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 italic">Không có bản ghi</span>
-                      )}
-                    </div>
-                  ))}
+              {storedMetrics.weekly_frequency && storedMetrics.weekly_frequency.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-500 font-medium">Tần suất theo tuần:</span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {storedMetrics.weekly_frequency.map((wf) => (
+                      <div
+                        key={wf.week_number}
+                        className="p-1.5 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 text-[10px] flex items-center justify-between"
+                      >
+                        <span className="text-slate-600 dark:text-slate-400">{wf.label}:</span>
+                        {wf.has_records ? (
+                          <span className="font-semibold text-purple-600 dark:text-purple-400">
+                            {wf.session_count} buổi
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic">Không có bản ghi</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Cơ cấu thời lượng môn */}
-              {storedMetrics.sport_distribution.length > 0 && (
+              {storedMetrics.sport_distribution && storedMetrics.sport_distribution.length > 0 && (
                 <div className="space-y-1 pt-1">
                   <span className="text-[10px] text-slate-500 font-medium">
                     Cơ cấu thời lượng theo môn:
