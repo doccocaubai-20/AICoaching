@@ -98,6 +98,27 @@ function extractWaist(text: string): number | null {
 }
 
 /**
+ * Chuẩn hóa viết tắt và tiếng lóng tiếng Việt
+ */
+function normalizeVietnameseInput(text: string): string {
+  return text
+    .replace(/(?:^|(?<=[\s,;.!]))(?:hnay|h\.nay)(?=[\s,;.!]|$)/gi, 'hôm nay')
+    .replace(/(?:^|(?<=[\s,;.!]))(?:hqua|h\.qua|hôm wa)(?=[\s,;.!]|$)/gi, 'hôm qua')
+    .replace(/(?:^|(?<=[\s,;.!]))(?:tối wa|đêm wa)(?=[\s,;.!]|$)/gi, 'tối qua')
+    .replace(/(?:^|(?<=[\s,;.!]))t(?=[\s,;.!]|$)/gi, 'tôi')
+    .replace(/\b(?:tui|mk|mềnh)\b/gi, 'tôi')
+    .replace(/\b(?:k|ko|khg|hem)\b/gi, 'không')
+    .replace(/\b(?:đc|dc)\b/gi, 'được');
+}
+
+interface DetectedSportItem {
+  sport: 'running' | 'calisthenics' | 'badminton' | 'walking' | 'other';
+  duration: number | null;
+  customName?: string;
+  rawClause: string;
+}
+
+/**
  * Phân tích câu tự nhiên tiếng Việt thành CaptureDraft có cấu trúc
  */
 export function parseQuickCapture(
@@ -105,7 +126,7 @@ export function parseQuickCapture(
   timezone: string = DEFAULT_APP_TIMEZONE,
   existingCheckinForDate: any = null
 ): CaptureDraft {
-  const normalized = rawInput.trim();
+  const normalized = normalizeVietnameseInput(rawInput.trim());
   const lower = normalized.toLowerCase();
 
   // 1. Phân giải ngày
@@ -119,11 +140,8 @@ export function parseQuickCapture(
   }
 
   // Xác định ngày cho Check-in
-  // Ghi nhận ngủ "tối qua" thì check-in thuộc ngày hôm nay (buổi sáng thức dậy) hoặc hôm qua
   let checkinDateStr = todayDateStr;
   if (/hôm qua|tối qua|đêm qua/i.test(lower)) {
-    // Nếu nói riêng tối qua ngủ, theo thói quen checkin thường là ngày hôm nay đánh giá giấc ngủ đêm qua,
-    // nhưng nếu có từ "hôm qua ngủ" thì có thể là check-in ngày hôm qua
     checkinDateStr = todayDateStr;
   }
 
@@ -133,41 +151,99 @@ export function parseQuickCapture(
   const disambiguations: DisambiguationQuestion[] = [];
   const missingFields: Array<{ target: string; message: string }> = [];
 
-  // 2. Phát hiện hoạt động (Activity)
-  let detectedSport: 'running' | 'calisthenics' | 'badminton' | 'walking' | 'other' | null = null;
-  if (/chạy\s*bộ|chạy|chay\s*bo|jogging|run/i.test(lower)) {
-    detectedSport = 'running';
-  } else if (/calisthenics|calis|chống\s*đẩy|hít\s*xà|hít\s*đất|pull\s*up|push\s*up|dips|tập\s*xà|tập\s*gym/i.test(lower)) {
-    detectedSport = 'calisthenics';
-  } else if (/cầu\s*lông|badminton/i.test(lower)) {
-    detectedSport = 'badminton';
-  } else if (/đi\s*bộ|walking/i.test(lower)) {
-    detectedSport = 'walking';
-  } else if (/đạp\s*xe|bơi|bơi\s*lội|yoga/i.test(lower)) {
-    detectedSport = 'other';
+  // 2. Tách các phân đoạn (clauses) để phát hiện đa hoạt động (Multi-activity)
+  const clauses = normalized
+    .split(/[,;\n]|(?:\bvà\b)|(?:\brồi\b)|(?:\bsau đó\b)|(?:\bcòn\b)|(?:\btiếp theo\b)/i)
+    .map((c) => c.trim())
+    .filter(Boolean);
+
+  const detectedSports: DetectedSportItem[] = [];
+
+  for (const clause of clauses) {
+    const cLower = clause.toLowerCase();
+    // Bỏ qua nếu đây là phân đoạn nói riêng về giấc ngủ
+    if (/^\s*(?:tối qua|đêm qua|hôm qua)?\s*ngủ\b/i.test(cLower) || (/ngủ/i.test(cLower) && !/chạy|calis|xà|đất|lông|đi bộ|tập|nhảy dây|bơi|đạp/i.test(cLower))) {
+      continue;
+    }
+
+    let sport: 'running' | 'calisthenics' | 'badminton' | 'walking' | 'other' | null = null;
+    let customName: string | undefined;
+
+    // Ưu tiên cầu lông trước chạy (tránh "chạy cầu lông" bị tính là chạy bộ)
+    if (/cầu\s*lông|badminton/i.test(cLower)) {
+      sport = 'badminton';
+    } else if (/calisthenics|calis|chống\s*đẩy|hít\s*xà|hít\s*đất|pull\s*up|push\s*up|dips|tập\s*xà|tập\s*gym|gập\s*bụng|plank/i.test(cLower)) {
+      sport = 'calisthenics';
+    } else if (/đi\s*bộ|walking|tản\s*bộ/i.test(cLower)) {
+      sport = 'walking';
+    } else if (/nhảy\s*dây|jump\s*rope/i.test(cLower)) {
+      sport = 'other';
+      customName = 'Nhảy dây';
+    } else if (/đạp\s*xe|cycling/i.test(cLower)) {
+      sport = 'other';
+      customName = 'Đạp xe';
+    } else if (/bơi|bơi\s*lội|swimming/i.test(cLower)) {
+      sport = 'other';
+      customName = 'Bơi lội';
+    } else if (/yoga/i.test(cLower)) {
+      sport = 'other';
+      customName = 'Yoga';
+    } else if (/chạy\s*bộ|chạy|chay\s*bo|jogging|run/i.test(cLower)) {
+      sport = 'running';
+    }
+
+    if (sport) {
+      // Chỉ tìm thời lượng bên trong phân đoạn này, không quét lan sang phân đoạn khác
+      const duration = extractDurationMinutes(clause);
+      detectedSports.push({
+        sport,
+        duration,
+        customName,
+        rawClause: clause,
+      });
+    }
   }
 
-  // Tìm thời lượng hoạt động
-  let activityDuration = extractDurationMinutes(rawInput);
+  // Fallback nếu không tách được theo dấu phân đoạn nhưng có môn tập
+  if (detectedSports.length === 0) {
+    let singleSport: 'running' | 'calisthenics' | 'badminton' | 'walking' | 'other' | null = null;
+    let customName: string | undefined;
+    if (/cầu\s*lông|badminton/i.test(lower)) {
+      singleSport = 'badminton';
+    } else if (/calisthenics|calis|chống\s*đẩy|hít\s*xà|hít\s*đất|pull\s*up|push\s*up|dips|tập\s*xà|tập\s*gym/i.test(lower)) {
+      singleSport = 'calisthenics';
+    } else if (/đi\s*bộ|walking/i.test(lower)) {
+      singleSport = 'walking';
+    } else if (/nhảy\s*dây|jump\s*rope/i.test(lower)) {
+      singleSport = 'other';
+      customName = 'Nhảy dây';
+    } else if (/đạp\s*xe|bơi|bơi\s*lội|yoga/i.test(lower)) {
+      singleSport = 'other';
+    } else if (/chạy\s*bộ|chạy|chay\s*bo|jogging|run/i.test(lower)) {
+      singleSport = 'running';
+    }
 
-  // Nếu có cả giấc ngủ và hoạt động thì phân tách cụm từ
-  const hasSleepMention = /ngủ|giấc\s*ngủ/i.test(lower);
-  if (detectedSport && hasSleepMention) {
-    // Tách vế câu qua dấu phẩy hoặc liên từ "và", "còn", "tối qua"
-    const parts = rawInput.split(/[,;]|(?:\bvà\b)|(?:\btối qua\b)|(?:\bđêm qua\b)/i);
-    for (const part of parts) {
-      if (
-        /chạy|calis|xà|đất|lông|đi bộ|tập/i.test(part) &&
-        !/ngủ/i.test(part)
-      ) {
-        const dur = extractDurationMinutes(part);
-        if (dur) activityDuration = dur;
+    if (singleSport) {
+      // Tìm thời lượng không bao gồm giấc ngủ
+      let dur: number | null = null;
+      if (/ngủ|giấc\s*ngủ/i.test(lower)) {
+        const nonSleepText = normalized.replace(/(?:tối qua|đêm qua|hôm qua)?\s*ngủ\s*[^,;.]+/gi, '');
+        dur = extractDurationMinutes(nonSleepText);
+      } else {
+        dur = extractDurationMinutes(normalized);
       }
+      detectedSports.push({
+        sport: singleSport,
+        duration: dur,
+        customName,
+        rawClause: normalized,
+      });
     }
   }
 
   // 3. Phát hiện giấc ngủ
-  const sleepMinutes = extractSleepDuration(rawInput);
+  const sleepMinutes = extractSleepDuration(normalized);
+  const hasSleepMention = /ngủ|giấc\s*ngủ/i.test(lower);
   if (hasSleepMention || sleepMinutes !== null) {
     dailyCheckin = {
       local_date: checkinDateStr,
@@ -197,7 +273,6 @@ export function parseQuickCapture(
   }
 
   // 4. Phát hiện RPE / Mệt mỏi / Căng thẳng (Disambiguation)
-  // Ví dụ: "mệt 7", "mệt mức 7", "rpe 8", "đuối 6"
   const fatigueMatch = /(?:mệt|đuối|rpe)\s*(?:mức\s*)?(\d+)(?:\s*\/\s*10)?\b/i.exec(lower);
   let resolvedActivityFatigue: number | undefined;
 
@@ -206,17 +281,15 @@ export function parseQuickCapture(
     const rawText = fatigueMatch[0];
 
     if (/rpe\s*\d+/i.test(rawText)) {
-      // Nếu nói rõ RPE thì gắn cho buổi tập
       if (rawVal >= 1 && rawVal <= 10) {
         resolvedActivityFatigue = rawVal;
       }
     } else {
-      // "mệt 7" -> Tạo DisambiguationQuestion, KHÔNG tự ý map 2 thang
       disambiguations.push({
         id: 'fatigue_disambiguation',
         rawTextSegment: rawText,
         question: `Bạn đã nhập "${rawText}". Bạn muốn ghi nhận mức này cho buổi tập hay cảm nhận trong ngày?`,
-        fieldTarget: detectedSport && dailyCheckin ? 'both' : detectedSport ? 'activity_fatigue' : 'checkin_fatigue',
+        fieldTarget: detectedSports.length > 0 && dailyCheckin ? 'both' : detectedSports.length > 0 ? 'activity_fatigue' : 'checkin_fatigue',
         options: [
           {
             id: 'option_activity_rpe',
@@ -232,7 +305,6 @@ export function parseQuickCapture(
             description: 'Ghi nhận vào đánh giá sinh hoạt hằng ngày',
             targetValue: {
               checkinStressOrEnergy: {
-                // Chỉ gợi ý nếu user chọn, thang 1-5
                 stress: Math.min(Math.max(Math.round(rawVal / 2), 1), 5),
               },
             },
@@ -242,21 +314,22 @@ export function parseQuickCapture(
     }
   }
 
-  // 5. Thêm Activity nếu phát hiện môn tập
-  if (detectedSport) {
-    if (activityDuration && activityDuration > 0) {
+  // 5. Thêm tất cả Activity hợp lệ đã nhận diện
+  let actIndex = 0;
+  for (const item of detectedSports) {
+    if (item.duration && item.duration > 0) {
       activities.push({
-        tempId: `act_${Date.now()}`,
-        activity_type: detectedSport,
-        duration_minutes: activityDuration,
+        tempId: `act_${Date.now()}_${actIndex++}`,
+        activity_type: item.sport,
+        duration_minutes: item.duration,
         fatigue_level: resolvedActivityFatigue,
         start_at: `${activityDateStr}T08:00:00.000Z`,
-        notes: `Ghi nhanh: "${normalized}"`,
+        notes: item.customName ? `${item.customName} ("${item.rawClause}")` : `Ghi nhanh: "${item.rawClause}"`,
       });
     } else {
       missingFields.push({
         target: 'activity.duration_minutes',
-        message: `Bạn đã tập ${detectedSport} nhưng chưa ghi thời lượng (phút/giờ).`,
+        message: `Bạn đã tập ${item.sport} nhưng chưa ghi thời lượng (phút/giờ).`,
       });
     }
   }

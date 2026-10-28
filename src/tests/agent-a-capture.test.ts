@@ -172,4 +172,44 @@ describe('Agent A: D1 Quick Capture Parser & Contract Tests', () => {
     const parsed = ConfirmBatchPayloadSchema.safeParse(validPayload);
     expect(parsed.success).toBe(true);
   });
+
+  it('9. Không lấy nhầm thời lượng giấc ngủ gán cho môn tập khi môn tập chỉ ghi hiệp/cái', () => {
+    const input = 'Hôm nay tôi ở nhà tập chống đẩy 2 hiệp mỗi hiệp 20 cái, tối qua ngủ 8 tiếng rưỡi, 2 giờ đêm mới ngủ, sáng dậy vẫn thiếu ngủ';
+    const draft = parseQuickCapture(input, timezone);
+
+    // Giấc ngủ được nhận diện đúng 8.5 giờ (510 phút)
+    expect(draft.dailyCheckin).not.toBeNull();
+    expect(draft.dailyCheckin?.sleep_duration_minutes).toBe(510);
+
+    // Môn tập không bị gán nhầm 510 phút của giấc ngủ!
+    expect(draft.activities.length).toBe(0);
+    expect(draft.missingFields.some((f) => f.target === 'activity.duration_minutes')).toBe(true);
+  });
+
+  it('10. Phân tích đa hoạt động (Multi-activity) kèm viết tắt: "Hnay t chạy cầu lông 1 tiếng 15, nhảy dây 20 phút, đi bộ 2 tiếng, ngủ 2 tiếng rưỡi"', () => {
+    const input = 'Hnay t chạy cầu lông 1 tiếng 15, nhảy dây 20 phút, đi bộ 2 tiếng, ngủ 2 tiếng rưỡi';
+    const draft = parseQuickCapture(input, timezone);
+
+    // Có 3 môn tập được bóc tách riêng biệt
+    expect(draft.activities.length).toBe(3);
+
+    // Môn 1: Cầu lông 1h15p = 75 phút (không bị nhận nhầm thành chạy)
+    const badminton = draft.activities.find((a) => a.activity_type === 'badminton');
+    expect(badminton).toBeDefined();
+    expect(badminton?.duration_minutes).toBe(75);
+
+    // Môn 2: Nhảy dây 20 phút
+    const jumpRope = draft.activities.find((a) => a.activity_type === 'other');
+    expect(jumpRope).toBeDefined();
+    expect(jumpRope?.duration_minutes).toBe(20);
+
+    // Môn 3: Đi bộ 2 tiếng = 120 phút
+    const walking = draft.activities.find((a) => a.activity_type === 'walking');
+    expect(walking).toBeDefined();
+    expect(walking?.duration_minutes).toBe(120);
+
+    // Giấc ngủ: 2 tiếng rưỡi = 150 phút (2.5h)
+    expect(draft.dailyCheckin).not.toBeNull();
+    expect(draft.dailyCheckin?.sleep_duration_minutes).toBe(150);
+  });
 });
