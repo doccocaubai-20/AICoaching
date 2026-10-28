@@ -1,16 +1,18 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { UserPlus, Lock, Mail, User, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { UserPlus, Lock, Mail, User, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { getSupabaseEnvStatus, SupabaseEnvStatus } from '@/lib/supabase/env';
 import { CredentialStatusBanner } from '@/components/ui/CredentialStatusBanner';
 import { ExperienceLevel } from '@/contracts/database.types';
+import { getSafeRedirectUrl } from '@/lib/auth/safe-redirect';
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -42,7 +44,7 @@ export default function RegisterPage() {
     }
 
     if (password.length < 6) {
-      setErrorMessage('Mật khẩu tối thiểu phải có 6 ký tự.');
+      setErrorMessage('Mật khẩu phải có tối thiểu 6 ký tự.');
       return;
     }
 
@@ -50,11 +52,13 @@ export default function RegisterPage() {
     try {
       const supabase = createClient();
       if (!supabase) {
-        throw new Error('Không thể kết nối Supabase client');
+        throw new Error('Không thể khởi tạo client Supabase');
       }
 
-      // Hồ sơ được tạo ở database (trigger handle_new_user) từ metadata này,
-      // nên vẫn có hồ sơ kể cả khi cần xác nhận email trước khi có phiên đăng nhập.
+      const nextUrl = searchParams.get('next');
+      const intent = searchParams.get('intent');
+      const target = getSafeRedirectUrl(nextUrl, intent);
+
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -74,11 +78,11 @@ export default function RegisterPage() {
       if (authData.session) {
         setSuccessMessage('Đăng ký thành công! Đang chuyển hướng...');
         setTimeout(() => {
-          router.push('/dashboard');
+          router.push(target);
           router.refresh();
-        }, 1200);
+        }, 1000);
       } else if (authData.user) {
-        setSuccessMessage('Đăng ký thành công! Vui lòng mở email để xác nhận tài khoản, sau đó đăng nhập.');
+        setSuccessMessage('Đăng ký thành công! Vui lòng mở email để xác nhận tài khoản, sau đó đăng nhập để tiếp tục.');
       }
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : 'Đã có lỗi xảy ra khi đăng ký.');
@@ -87,8 +91,15 @@ export default function RegisterPage() {
     }
   };
 
+  const nextParam = searchParams.get('next');
+  const intentParam = searchParams.get('intent');
+  const loginQuery = new URLSearchParams();
+  if (nextParam) loginQuery.set('next', nextParam);
+  if (intentParam) loginQuery.set('intent', intentParam);
+  const loginHref = loginQuery.toString() ? `/login?${loginQuery.toString()}` : '/login';
+
   return (
-    <div className="p-5 flex-1 flex flex-col justify-center">
+    <div className="p-5 flex-1 flex flex-col justify-center max-w-md mx-auto w-full">
       {envStatus && !envStatus.isConfigured && (
         <CredentialStatusBanner
           isConfigured={envStatus.isConfigured}
@@ -105,119 +116,136 @@ export default function RegisterPage() {
             Tạo tài khoản mới
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Bắt đầu theo dõi quá trình tập luyện và tương tác AI cá nhân
+            Bắt đầu ghi lại quá trình vận động cá nhân của bạn
           </p>
         </div>
 
         {errorMessage && (
-          <div className="mb-4 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start gap-2 text-rose-800 dark:text-rose-300 text-xs">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
-            <span>{errorMessage}</span>
+          <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-start gap-2.5 text-xs text-rose-700 dark:text-rose-300">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+            <div className="flex-1 leading-snug">{errorMessage}</div>
           </div>
         )}
 
         {successMessage && (
-          <div className="mb-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 flex items-start gap-2 text-emerald-800 dark:text-emerald-300 text-xs">
-            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
-            <span>{successMessage}</span>
+          <div className="mb-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-start gap-2.5 text-xs text-emerald-700 dark:text-emerald-300">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-500" />
+            <div className="flex-1 leading-snug">{successMessage}</div>
           </div>
         )}
 
-        <form onSubmit={handleRegister} className="space-y-3.5">
+        <form onSubmit={handleRegister} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Tên hiển thị
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              Họ và tên hoặc Biệt danh
             </label>
             <div className="relative">
-              <User className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
+                required
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Ví dụ: Hoàng Nam"
-                required
-                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+                placeholder="Ví dụ: Nguyễn Văn A"
+                className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
               Địa chỉ Email
             </label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="email"
+                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                required
-                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+                placeholder="ten@example.com"
+                className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
               Mật khẩu (tối thiểu 6 ký tự)
             </label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="password"
+                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                required
-                minLength={6}
-                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+                className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Kinh nghiệm Calisthenics
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              Kinh nghiệm tập luyện Calisthenics
             </label>
-            <select
-              value={experienceLevel}
-              onChange={(e) => setExperienceLevel(e.target.value as ExperienceLevel)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
-            >
-              <option value="beginner">Người mới bắt đầu (Beginner)</option>
-              <option value="intermediate">Đã tập một thời gian (Intermediate)</option>
-              <option value="advanced">Nâng cao / Thành thạo (Advanced)</option>
-            </select>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: 'beginner', label: 'Mới bắt đầu' },
+                { value: 'intermediate', label: 'Đã có nền tảng' },
+                { value: 'advanced', label: 'Nâng cao' },
+              ].map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setExperienceLevel(item.value as ExperienceLevel)}
+                  className={`py-2 px-2 text-center text-xs rounded-xl border font-medium transition ${
+                    experienceLevel === item.value
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-semibold'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
-
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal pt-1">
-            Bằng việc đăng ký, bạn xác nhận hiểu rằng ứng dụng cung cấp nội dung <strong>minh họa kỹ thuật</strong> và không thay thế tư vấn y tế/thể thao chuyên môn.
-          </p>
 
           <button
             type="submit"
-            disabled={isLoading || (envStatus !== null && !envStatus.isConfigured)}
-            className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white font-medium text-sm rounded-lg transition duration-150 flex items-center justify-center gap-2 shadow-sm"
+            disabled={isLoading}
+            className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 text-white font-semibold text-xs rounded-xl transition shadow-sm flex items-center justify-center gap-2 mt-4"
           >
             {isLoading ? (
-              <span>Đang tạo tài khoản...</span>
-            ) : (
               <>
-                <UserPlus className="w-4 h-4" />
-                <span>Đăng ký tài khoản</span>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Đang xử lý...</span>
               </>
+            ) : (
+              <span>Đăng ký tài khoản</span>
             )}
           </button>
         </form>
 
-        <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 text-center text-xs text-slate-500">
+        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-center text-xs text-slate-500">
           Đã có tài khoản?{' '}
-          <Link href="/login" className="font-semibold text-emerald-600 hover:underline">
+          <Link
+            href={loginHref}
+            className="font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+          >
             Đăng nhập ngay
           </Link>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">Đang tải trang đăng ký...</div>}>
+      <RegisterForm />
+    </Suspense>
   );
 }

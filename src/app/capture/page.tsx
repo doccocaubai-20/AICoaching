@@ -616,10 +616,10 @@ export default function CapturePage() {
                 Ghi thêm câu khác
               </button>
               <Link
-                href="/profile?tab=health"
+                href="/dashboard"
                 className="flex-1 py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-semibold rounded-xl text-center transition-all"
               >
-                Về Hồ sơ sức khỏe
+                Về Hôm nay
               </Link>
             </div>
           </div>

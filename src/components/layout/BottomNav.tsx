@@ -35,25 +35,24 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     href: '/activities',
-    label: 'Lịch sử',
+    label: 'Nhật ký',
     icon: CalendarCheck2,
     matches: ['/activities'],
   },
   {
     href: '/groups',
-    label: 'Đồng hành',
+    label: 'Nhóm',
     icon: Users,
     matches: ['/groups'],
   },
   {
-    href: '/profile',
+    href: '/me',
     label: 'Cá nhân',
     icon: UserCheck,
-    matches: ['/profile', '/health', '/passport', '/briefs', '/ai'],
+    matches: ['/me', '/profile', '/health', '/passport', '/briefs', '/ai'],
   },
 ];
 
-// Phải nằm bên trong <Link> để useLinkStatus biết link này đang chuyển trang.
 function NavItemIcon({ icon: Icon, isActive }: { icon: LucideIcon; isActive: boolean }) {
   const { pending } = useLinkStatus();
   if (pending) {
@@ -65,11 +64,12 @@ function NavItemIcon({ icon: Icon, isActive }: { icon: LucideIcon; isActive: boo
 export function BottomNav() {
   const pathname = usePathname();
 
-  // Ẩn thanh điều hướng trên các trang công khai, chia sẻ hoặc đăng nhập/đăng ký
+  // Ẩn thanh điều hướng trên các trang công khai, chia sẻ hoặc đăng nhập/đăng ký/dùng thử
   if (
     pathname === '/' ||
     pathname === '/login' ||
     pathname === '/register' ||
+    pathname === '/try' ||
     pathname.startsWith('/shared/')
   ) {
     return null;
@@ -78,26 +78,28 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Điều hướng chính"
-      className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 pb-[env(safe-area-inset-bottom)] sm:hidden"
     >
-      <div className="max-w-[480px] mx-auto grid grid-cols-5 h-16">
+      <div className="grid grid-cols-5 h-16 max-w-lg mx-auto">
         {NAV_ITEMS.map((item) => {
-          const isActive = item.matches.some(
-            (pattern) => pathname === pattern || pathname.startsWith(`${pattern}/`)
+          const isActive = item.matches.some((prefix) =>
+            prefix === '/dashboard'
+              ? pathname === '/dashboard' || pathname.startsWith('/capture')
+              : pathname.startsWith(prefix)
           );
 
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors ${
+              className={`flex flex-col items-center justify-center gap-1 transition-colors ${
                 isActive
                   ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
-                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               <NavItemIcon icon={item.icon} isActive={isActive} />
-              <span className="truncate max-w-[64px]">{item.label}</span>
+              <span className="text-[11px] leading-none">{item.label}</span>
             </Link>
           );
         })}

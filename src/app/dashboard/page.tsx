@@ -3,81 +3,62 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
   LayoutDashboard,
-  Plus,
-  HeartPulse,
-  ArrowRight,
-  Sparkles,
-  BotMessageSquare,
   Zap,
-  Users,
+  Dumbbell,
+  ArrowRight,
+  Clock,
+  Sparkles,
+  CalendarCheck2,
+  ChevronRight,
+  TrendingUp,
+  AlertCircle,
+  Play,
+  RotateCcw,
+  CheckCircle2,
 } from 'lucide-react';
 import { getSupabaseEnvStatus } from '@/lib/supabase/env';
 import { getAuthenticatedUser } from '@/lib/server/auth-guard';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { CredentialStatusBanner } from '@/components/ui/CredentialStatusBanner';
-import { DashboardStatsSection } from '@/components/dashboard/DashboardStatsSection';
-import { DashboardGoalsSection } from '@/components/dashboard/DashboardGoalsSection';
-import { DashboardMetricsSection } from '@/components/dashboard/DashboardMetricsSection';
-import { DashboardActivitiesSection } from '@/components/dashboard/DashboardActivitiesSection';
-import { DashboardAISummaryCard } from '@/components/dashboard/DashboardAISummaryCard';
-import { QuickCheckinWidget } from '@/components/health/QuickCheckinWidget';
-import { QuickCaptureLauncher } from '@/features/capture/components/QuickCaptureLauncher';
 import { ResumeWorkoutCard } from '@/features/workout/components/ResumeWorkoutCard';
 import { WorkoutRunEntity } from '@/features/workout/contracts/workout.contract';
-import { JourneySummaryCard } from '@/features/skills/components/JourneySummaryCard';
-import { getJourneySummary } from '@/features/skills/server/skills-actions';
-import { GroupWeekSummaryCard } from '@/components/groups/GroupWeekSummaryCard';
-import { GroupWeekSummaryExport, exportGroupWeekSummary } from '@/contracts/group.contract';
+import { selectDashboardAction } from '@/lib/dashboard/dashboard-action-selector';
 import {
   DEFAULT_APP_TIMEZONE,
   getLocalDateStartInstant,
   getLocalDateString,
   getPastLocalDateString,
 } from '@/lib/date-utils';
-import {
-  GoalEntity,
-  ObservationEntity,
-  ActivityEntity,
-  AISummaryEntity,
-  DailyCheckinEntity,
-} from '@/contracts';
+import { ActivityEntity, DailyCheckinEntity } from '@/contracts';
 
-export default async function DashboardPage() {
+interface DashboardPageProps {
+  searchParams?: Promise<{
+    intent?: string;
+    [key: string]: string | string[] | undefined;
+  }>;
+}
+
+export default async function DashboardPage(props: DashboardPageProps): Promise<React.ReactElement>;
+export default async function DashboardPage(): Promise<React.ReactElement>;
+export default async function DashboardPage(props?: DashboardPageProps): Promise<React.ReactElement> {
+  const searchParams = props?.searchParams;
+  const resolvedParams = searchParams ? await searchParams : {};
+  const userIntent = (resolvedParams.intent as any) || null;
   const envStatus = getSupabaseEnvStatus();
 
   // 1. Trường hợp chưa cấu hình credentials
   if (!envStatus.isConfigured) {
     return (
-      <div className="p-4 space-y-4">
+      <div className="p-4 sm:p-6 max-w-lg mx-auto space-y-4">
         <CredentialStatusBanner
           isConfigured={false}
           missingKeys={envStatus.missingKeys}
         />
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <LayoutDashboard className="w-5 h-5 text-emerald-600" />
-              <span>Hôm nay</span>
-            </h1>
-            <p className="text-xs text-slate-500">
-              Dữ liệu tự khai & tổng hợp quá trình vận động cá nhân
-            </p>
-          </div>
-          <Link
-            href="/passport"
-            className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1 shadow-xs"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Thẻ Passport</span>
-          </Link>
+        <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl text-center space-y-3">
+          <LayoutDashboard className="w-8 h-8 text-slate-400 mx-auto" />
+          <h2 className="text-base font-bold text-slate-900 dark:text-white">Chưa kết nối máy chủ</h2>
+          <p className="text-xs text-slate-500">Vui lòng cấu hình biến môi trường Supabase để bắt đầu sử dụng.</p>
         </div>
-
-        {/* Chưa cấu hình Supabase: không hiện 0 buổi / 0 phút, hiện "—" kèm "Chưa có dữ liệu" */}
-        <DashboardStatsSection activities={[]} isConfigured={false} />
-        <DashboardGoalsSection goals={[]} />
-        <DashboardMetricsSection observations={[]} />
-        <DashboardAISummaryCard latestSummary={null} />
-        <DashboardActivitiesSection activities={[]} />
       </div>
     );
   }
@@ -98,135 +79,150 @@ export default async function DashboardPage() {
     .select('timezone')
     .eq('user_id', user.id)
     .maybeSingle();
+
   const userTimezone = healthProfile?.timezone || DEFAULT_APP_TIMEZONE;
   const now = new Date();
   const sevenDaysAgo = getLocalDateStartInstant(getPastLocalDateString(6, now, userTimezone), userTimezone);
   const todayDateStr = getLocalDateString(now, userTimezone);
 
-  // 3. Tải song song dữ liệu từ database qua RLS
-  const [
-    profileRes,
-    goalsRes,
-    observationsRes,
-    activitiesRes,
-    statsActivitiesRes,
-    aiSummaryRes,
-    todayCheckinRes,
-    activeWorkoutRes,
-  ] = await Promise.all([
-    supabase.from('profiles').select('display_name').eq('user_id', user.id).maybeSingle(),
-    supabase.from('goals').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-    supabase.from('observations').select('*').eq('user_id', user.id).order('observed_at', { ascending: false }),
-    supabase.from('activities').select('*').eq('user_id', user.id).order('start_at', { ascending: false }).limit(10),
-    supabase
-      .from('activities')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('is_planned', false)
-      .gte('start_at', sevenDaysAgo.toISOString())
-      .lte('start_at', now.toISOString()),
-    supabase
-      .from('ai_summaries')
-      .select('*')
-      .eq('user_id', user.id)
-      .or('input_scope->>kind.is.null,input_scope->>kind.neq.analysis')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from('daily_checkins')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('local_date', todayDateStr)
-      .maybeSingle(),
-    (async () => {
-      try {
-        let q = (supabase as any)
-          .from('workout_runs')
-          .select('*')
-          .eq('user_id', user.id);
-        if (typeof q.in === 'function') {
-          q = q.in('status', ['in_progress', 'paused']);
-        } else if (typeof q.or === 'function') {
-          q = q.or('status.eq.in_progress,status.eq.paused');
-        }
-        return await q.order('updated_at', { ascending: false }).limit(1).maybeSingle();
-      } catch {
-        return { data: null };
-      }
-    })(),
-  ]);
+  // 3. Tải dữ liệu server
+  let hasQueryError = false;
+  let queryErrorMessage: string | null = null;
+  let activeWorkout: WorkoutRunEntity | null = null;
+  let todayActivity: ActivityEntity | null = null;
+  let latestActivity: ActivityEntity | null = null;
+  let totalActivitiesCount = 0;
+  let statsActivities: ActivityEntity[] = [];
+  let todayCheckin: DailyCheckinEntity | null = null;
+  let displayName = 'Bạn';
 
-  const displayName =
-    profileRes.data?.display_name ||
-    user.user_metadata?.display_name ||
-    'Người dùng mới';
-
-  const goals = (goalsRes.data as GoalEntity[]) || [];
-  const observations = (observationsRes.data as ObservationEntity[]) || [];
-  const recentActivities = (activitiesRes.data as ActivityEntity[]) || [];
-  const statsActivities = (statsActivitiesRes.data as ActivityEntity[]) || [];
-  const latestSummary = (aiSummaryRes.data as AISummaryEntity) || null;
-  const todayCheckin = (todayCheckinRes.data as DailyCheckinEntity) || null;
-  const activeWorkout = (activeWorkoutRes?.data as unknown as WorkoutRunEntity) || null;
-
-  // Lấy tóm tắt kỹ năng (Agent C)
-  let journeySummary = null;
   try {
-    journeySummary = await getJourneySummary(user.id);
-  } catch {
-    journeySummary = null;
-  }
-
-  // Lấy tóm tắt nhóm đồng hành (Agent D)
-  let groupSummary: GroupWeekSummaryExport | null = null;
-  try {
-    const { data: memberOf } = await (supabase as any)
-      .from('group_members')
-      .select('group_id')
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-      .limit(1)
-      .maybeSingle();
-
-    if (memberOf?.group_id) {
-      const { data: grp } = await (supabase as any)
-        .from('groups')
-        .select('id, name')
-        .eq('id', memberOf.group_id)
-        .maybeSingle();
-
-      if (grp) {
-        const [membersRes, commitsRes] = await Promise.all([
-          (supabase as any)
-            .from('group_members')
-            .select('id')
-            .eq('group_id', grp.id)
-            .eq('status', 'active'),
-          (supabase as any)
-            .from('weekly_commitments')
+    const [
+      profileRes,
+      activitiesRes,
+      statsActivitiesRes,
+      todayCheckinRes,
+      activeWorkoutRes,
+      totalCountRes,
+    ] = await Promise.all([
+      supabase.from('profiles').select('display_name').eq('user_id', user.id).maybeSingle(),
+      supabase
+        .from('activities')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('start_at', { ascending: false })
+        .limit(5),
+      supabase
+        .from('activities')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_planned', false)
+        .gte('start_at', sevenDaysAgo.toISOString())
+        .lte('start_at', now.toISOString()),
+      supabase
+        .from('daily_checkins')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('local_date', todayDateStr)
+        .maybeSingle(),
+      (async () => {
+        try {
+          let q = (supabase as any)
+            .from('workout_runs')
             .select('*')
-            .eq('group_id', grp.id),
-        ]);
+            .eq('user_id', user.id);
+          if (typeof q.in === 'function') {
+            q = q.in('status', ['in_progress', 'paused']);
+          } else if (typeof q.or === 'function') {
+            q = q.or('status.eq.in_progress,status.eq.paused');
+          }
+          return await q.order('updated_at', { ascending: false }).limit(1).maybeSingle();
+        } catch {
+          return { data: null };
+        }
+      })(),
+      supabase.from('activities').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+    ]);
 
-        groupSummary = exportGroupWeekSummary(
-          { id: grp.id, name: grp.name, timezone: userTimezone },
-          commitsRes.data || [],
-          todayDateStr,
-          (membersRes.data || []).length
-        );
-      }
-    }
-  } catch {
-    groupSummary = null;
+    displayName =
+      profileRes.data?.display_name ||
+      user.user_metadata?.display_name ||
+      'Bạn';
+
+    const recentList = (activitiesRes.data as ActivityEntity[]) || [];
+    latestActivity = recentList[0] || null;
+
+    // Kiểm tra hoạt động hôm nay
+    todayActivity =
+      recentList.find((a) => {
+        const actDateStr = getLocalDateString(new Date(a.start_at), userTimezone);
+        return actDateStr === todayDateStr;
+      }) || null;
+
+    statsActivities = (statsActivitiesRes.data as ActivityEntity[]) || [];
+    todayCheckin = (todayCheckinRes.data as DailyCheckinEntity) || null;
+    activeWorkout = (activeWorkoutRes?.data as unknown as WorkoutRunEntity) || null;
+    totalActivitiesCount = totalCountRes.count ?? recentList.length;
+  } catch (err: any) {
+    hasQueryError = true;
+    queryErrorMessage = err?.message || 'Lỗi đọc dữ liệu trạng thái.';
   }
+
+  // 4. Áp dụng Module quyết định thuần túy theo trạng thái server
+  const recommendation = selectDashboardAction({
+    hasError: hasQueryError,
+    errorMessage: queryErrorMessage,
+    activeWorkout: activeWorkout
+      ? {
+          id: activeWorkout.id,
+          routineTitle: (activeWorkout as any).routine_title || 'Buổi tập calisthenics',
+          completedSetsCount: (activeWorkout as any).completed_sets_count,
+          totalSetsCount: (activeWorkout as any).total_sets_count,
+          updatedAt: activeWorkout.updated_at,
+        }
+      : null,
+    userIntent,
+    totalActivitiesCount,
+    hasTodayActivity: !!todayActivity,
+    todayActivity: todayActivity
+      ? {
+          id: todayActivity.id,
+          activityType: todayActivity.activity_type,
+          durationMinutes: todayActivity.duration_minutes,
+          startAt: todayActivity.start_at,
+          notes: todayActivity.notes,
+        }
+      : null,
+    latestActivity: latestActivity
+      ? {
+          id: latestActivity.id,
+          activityType: latestActivity.activity_type,
+          durationMinutes: latestActivity.duration_minutes,
+          startAt: latestActivity.start_at,
+          notes: latestActivity.notes,
+        }
+      : null,
+    todayCheckin: todayCheckin
+      ? {
+          id: todayCheckin.id,
+          sleepDurationMinutes: todayCheckin.sleep_duration_minutes,
+          energyLevel: todayCheckin.energy_level,
+        }
+      : null,
+  });
+
+  const { primaryAction, secondaryActions, recentRecord, showWeekReview } = recommendation;
+
+  // Tính tổng số phút và buổi trong 7 ngày
+  const weekTotalMinutes = statsActivities.reduce((acc, act) => acc + act.duration_minutes, 0);
+  const weekTotalSessions = statsActivities.length;
 
   return (
-    <div className="p-4 space-y-4 max-w-lg mx-auto">
-      {/* Header trang & Chào mừng */}
+    <div className="p-4 sm:p-6 max-w-lg mx-auto space-y-6">
+      {/* Header Chào mừng & Ngày hôm nay */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
+          <h1 className="text-xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
             <LayoutDashboard className="w-5 h-5 text-emerald-600" />
             <span>Hôm nay</span>
           </h1>
@@ -234,169 +230,135 @@ export default async function DashboardPage() {
             Chào mừng trở lại, <span className="font-semibold text-slate-700 dark:text-slate-300">{displayName}</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/capture"
-            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1 shadow-xs"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>Ghi 1 câu</span>
-          </Link>
-          <Link
-            href="/activities"
-            className="text-xs bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium px-2.5 py-1.5 rounded-lg transition flex items-center gap-1"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Thủ công</span>
-          </Link>
-        </div>
+
+        <Link
+          href="/me"
+          className="text-xs px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg font-medium transition"
+        >
+          Cá nhân
+        </Link>
       </div>
 
-      {/* Ưu tiên 1 (Server State): Buổi tập đang dở (Agent B - D3) */}
-      {activeWorkout && (
-        <section aria-label="Buổi tập đang diễn ra">
+      {/* KHỐI 1: VIỆC CHÍNH PHÙ HỢP TRẠNG THÁI (PRIMARY ACTION) */}
+      {primaryAction.variant === 'resume_workout' && activeWorkout ? (
+        <section aria-label="Buổi tập đang dang dở">
           <ResumeWorkoutCard run={activeWorkout} />
+        </section>
+      ) : (
+        <section
+          aria-label="Hành động đề xuất chính"
+          className="p-5 sm:p-6 bg-gradient-to-br from-emerald-600 to-teal-800 text-white rounded-3xl shadow-md space-y-4"
+        >
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur text-[11px] font-semibold">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Nhiệm vụ hôm nay</span>
+            </div>
+            <h2 className="text-lg sm:text-xl font-black leading-snug">{primaryAction.title}</h2>
+            <p className="text-xs text-emerald-100 leading-relaxed">{primaryAction.reason}</p>
+          </div>
+
+          <div className="pt-1">
+            <Link
+              href={primaryAction.ctaHref}
+              className="w-full py-3 px-4 bg-white text-emerald-800 font-bold text-xs rounded-xl flex items-center justify-center gap-2 hover:bg-emerald-50 transition shadow-sm"
+            >
+              <span>{primaryAction.ctaLabel}</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+
+          {secondaryActions.length > 0 && (
+            <div className="pt-2 border-t border-white/20 flex flex-wrap gap-2">
+              {secondaryActions.map((sec) => (
+                <Link
+                  key={sec.id}
+                  href={sec.href}
+                  className="text-[11px] font-medium text-emerald-100 hover:text-white bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-lg transition"
+                >
+                  {sec.label} &rarr;
+                </Link>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
-      {/* Lối vào AI nhất quán: Nút Hỏi về dữ liệu của tôi */}
-      <div className="bg-gradient-to-r from-teal-500/10 via-emerald-500/10 to-indigo-500/10 border border-teal-500/20 dark:border-teal-500/30 rounded-2xl p-3 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-teal-500/20 text-teal-700 dark:text-teal-300 flex items-center justify-center">
-            <BotMessageSquare className="w-4 h-4" />
+      {/* KHỐI 2: BẢN GHI / KẾT QUẢ GẦN NHẤT (RECENT RECORD) */}
+      {recentRecord && (
+        <section
+          aria-label="Bản ghi gần nhất"
+          className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-xl">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                {recentRecord.timeLabel}
+              </div>
+              <div className="text-sm font-bold text-slate-900 dark:text-white line-clamp-1">
+                {recentRecord.title}
+              </div>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Trợ lý Hỏi đáp & Phân tích</p>
-            <p className="text-[11px] text-slate-500">Đặt câu hỏi có kiểm chứng nguồn và consent</p>
+
+          <Link
+            href={recentRecord.viewHref}
+            className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 shrink-0"
+          >
+            <span>Xem lại</span>
+            <ChevronRight className="w-4 h-4" />
+          </Link>
+        </section>
+      )}
+
+      {/* KHỐI 3: NHÌN LẠI TUẦN & KHÁM PHÁ (WEEKLY REVIEW & EXPLORE) */}
+      <section
+        aria-label="Nhìn lại tuần"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3"
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-emerald-600" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              Nhìn lại 7 ngày qua
+            </h3>
+          </div>
+          <Link href="/activities" className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
+            Xem nhật ký &rarr;
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 text-center">
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
+            <div className="text-xl font-black text-slate-900 dark:text-white">{weekTotalSessions}</div>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase mt-0.5">Buổi vận động</div>
+          </div>
+
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
+            <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">{weekTotalMinutes}</div>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase mt-0.5">Tổng số phút</div>
           </div>
         </div>
-        <Link
-          href="/ai"
-          className="text-xs bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-teal-700 dark:text-teal-300 font-semibold px-3 py-1.5 rounded-lg border border-teal-200 dark:border-teal-800 transition flex items-center gap-1 shadow-xs"
-        >
-          <span>Mở Trợ lý</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </Link>
-      </div>
 
-      {/* Ưu tiên 2: Trình ghi nhanh một câu (Agent A - D1) */}
-      <QuickCaptureLauncher variant="banner" />
-
-      {/* Micro-interaction: Check-in Sinh Hoạt Nhanh 10 Giây */}
-      <QuickCheckinWidget
-        todayCheckin={todayCheckin}
-        todayDateStr={todayDateStr}
-        isConfigured={true}
-      />
-
-      {/* Lối tắt: Sức Khỏe V2 & Thẻ Athlete Passport */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Link
-          href="/health"
-          className="block bg-gradient-to-r from-rose-500 to-indigo-600 hover:from-rose-600 hover:to-indigo-700 text-white rounded-2xl p-3.5 shadow-sm transition group"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
-                <HeartPulse className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <p className="text-xs font-bold leading-tight flex items-center gap-1.5">
-                  <span>Hồ Sơ Sức Khỏe V2</span>
-                  <span className="text-[10px] bg-white/25 px-1.5 py-0.2 rounded font-semibold">Mới</span>
-                </p>
-                <p className="text-[10px] text-white/80">
-                  Huyết áp, chấn thương, thuốc & an toàn
-                </p>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-white/70 group-hover:translate-x-1 transition-transform" />
-          </div>
-        </Link>
-
-        <Link
-          href="/passport"
-          className="block bg-gradient-to-r from-indigo-900 via-slate-900 to-emerald-950 hover:from-indigo-800 hover:to-emerald-900 text-white rounded-2xl p-3.5 shadow-sm border border-emerald-500/30 transition group"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 backdrop-blur border border-emerald-400/30 flex items-center justify-center text-emerald-400">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-bold leading-tight flex items-center gap-1.5">
-                  <span className="text-emerald-300">Athlete Passport</span>
-                  <span className="text-[10px] bg-emerald-500/30 text-emerald-300 px-1.5 py-0.2 rounded font-semibold">Căn Cước</span>
-                </p>
-                <p className="text-[10px] text-slate-300">
-                  Thẻ định danh rèn luyện & mã QR chia sẻ
-                </p>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-transform" />
-          </div>
-        </Link>
-      </div>
-
-      {/* Ưu tiên 3 & 4: Cam kết nhóm tuần (Agent D) & Hành trình kỹ năng có bằng chứng (Agent C) */}
-      <div className="space-y-3">
-        {groupSummary ? (
-          <GroupWeekSummaryCard summary={groupSummary} />
-        ) : (
-          <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                <Users className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Nhóm đồng hành 3–5 người</p>
-                <p className="text-[11px] text-slate-500">Giữ cam kết riêng, không áp lực bảng xếp hạng</p>
-              </div>
-            </div>
-            <Link
-              href="/groups"
-              className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5"
-            >
-              <span>Tham gia</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+        {/* Khám phá phụ theo ngữ cảnh (Progressive Disclosure) */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+          <div className="flex items-center gap-1">
+            <span>Hộ chiếu & QR:</span>
+            <Link href="/passport" className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline">
+              Hộ chiếu thể thao
             </Link>
           </div>
-        )}
-
-        {/* Hành trình kỹ năng (D4 + D6) */}
-        <JourneySummaryCard summary={journeySummary} />
-      </div>
-
-      {/* 1. Khối số liệu tổng hợp tuần */}
-      <DashboardStatsSection
-        activities={statsActivities}
-        isConfigured={true}
-        statsError={statsActivitiesRes.error ? 'Không tải được số liệu thống kê, thử lại sau.' : null}
-      />
-
-      {/* 2. Mục tiêu đang diễn ra */}
-      <DashboardGoalsSection
-        goals={goals}
-        goalsError={goalsRes.error ? 'Không tải được mục tiêu, thử lại sau.' : null}
-      />
-
-      {/* 3. Chỉ số tự khai */}
-      <DashboardMetricsSection
-        observations={observations}
-        metricsError={observationsRes.error ? 'Không tải được chỉ số thể chất, thử lại sau.' : null}
-      />
-
-      {/* 4. Tóm tắt AI mới nhất */}
-      <DashboardAISummaryCard
-        latestSummary={latestSummary}
-        aiError={aiSummaryRes.error ? 'Không tải được tóm tắt AI, thử lại sau.' : null}
-      />
-
-      {/* 5. Nhật ký hoạt động gần đây */}
-      <DashboardActivitiesSection
-        activities={recentActivities}
-        activitiesError={activitiesRes.error ? 'Không tải được nhật ký hoạt động, thử lại sau.' : null}
-      />
+          <div className="flex items-center gap-1">
+            <span>Trao đổi:</span>
+            <Link href="/briefs" className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline">
+              Bản tóm tắt
+            </Link>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
