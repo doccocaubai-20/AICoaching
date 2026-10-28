@@ -14,7 +14,7 @@
 
 ## Migration
 
-Production được xác minh đang có 001–008. Dry-run chỉ ra 010–014 cần áp dụng. Migration 014 cài lại các bản sửa policy/function/trigger để nâng cấp cả database đã áp dụng 010–013 trước đó. Không chạy seed hay xóa dữ liệu người dùng khi phát hành.
+Production ban đầu có 001–008. Đã áp dụng thành công 010–014; `supabase migration list --linked` xác nhận local/remote khớp toàn bộ 13 migration. Migration 014 cài lại các bản sửa policy/function/trigger để nâng cấp cả database đã áp dụng 010–013 trước đó. Không chạy seed hay xóa dữ liệu người dùng khi phát hành.
 
 ## Kiểm chứng trước phát hành
 
@@ -25,3 +25,9 @@ Production được xác minh đang có 001–008. Dry-run chỉ ra 010–014 c�
 - Trình duyệt tự động hiện bị tắt trong Work settings. Không tuyên bố đã kiểm UI tương tác bằng browser; xác minh phát hành qua build, HTTP, CLI Vercel và Supabase.
 
 Tham chiếu thời hạn upload: https://supabase.com/docs/reference/javascript/file-buckets-createsigneduploadurl
+
+## Kiểm chứng Supabase production sau migration
+
+- Smoke test trên database thật đạt: capture + replay không nhân đôi, chặn INSERT reservation trực tiếp, chặn share chéo chủ sở hữu, chặn người ngoài tạo invite, public payload đúng allowlist, RPC chứng cứ gọi được bằng vai trò authenticated.
+- Các fixture tổng hợp nằm trong transaction và đã **ROLLBACK**; không tạo tài khoản/dữ liệu demo lâu dài, không đọc hồ sơ cá nhân có sẵn.
+- Sau cập nhật cuối về policy Storage/tombstone: chạy lại 29 test media/release, tất cả đạt. Không thay đổi mã TypeScript sau build production đã đạt.
