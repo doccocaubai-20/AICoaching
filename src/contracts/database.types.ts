@@ -41,9 +41,7 @@ export type AISummaryStatus = 'ai_generated' | 'template_fallback';
 export type AIMessageRole = 'user' | 'assistant' | 'system';
 export type AIMessageStatus = 'completed' | 'failed' | 'retrying';
 
-export interface Database {
-  public: {
-    Tables: {
+interface CoreTables {
       profiles: {
         Row: {
           user_id: string;
@@ -782,32 +780,41 @@ export interface Database {
         };
         Relationships: [];
       };
-    } & AgentADatabaseTypes & AgentBDatabaseTypes & AgentCDatabaseTypes & AgentDDatabaseTypes;
+}
+
+interface CoreFunctions {
+  reserve_health_document_upload: {
+    Args: {
+      p_event_id: string | null;
+      p_title: string;
+      p_file_name: string;
+      p_file_type: HealthDocumentFileType;
+      p_file_size_bytes: number;
+      p_storage_path: string;
+      p_notes: string | null;
+    };
+    Returns: string;
+  };
+  finalize_health_document_upload: {
+    Args: { p_document_id: string };
+    Returns: string;
+  };
+  cancel_health_document_upload: {
+    Args: { p_document_id: string };
+    Returns: boolean;
+  };
+}
+
+type MergedTables = CoreTables & AgentADatabaseTypes & AgentBDatabaseTypes & AgentCDatabaseTypes & AgentDDatabaseTypes;
+type MergedFunctions = CoreFunctions & AgentAFunctionTypes & AgentBFunctionTypes & AgentCFunctionTypes & AgentDFunctionTypes;
+
+export interface Database {
+  public: {
+    Tables: { [K in keyof MergedTables]: MergedTables[K] };
     Views: {
       [_ in never]: never;
     };
-    Functions: {
-      reserve_health_document_upload: {
-        Args: {
-          p_event_id: string | null;
-          p_title: string;
-          p_file_name: string;
-          p_file_type: HealthDocumentFileType;
-          p_file_size_bytes: number;
-          p_storage_path: string;
-          p_notes: string | null;
-        };
-        Returns: string;
-      };
-      finalize_health_document_upload: {
-        Args: { p_document_id: string };
-        Returns: string;
-      };
-      cancel_health_document_upload: {
-        Args: { p_document_id: string };
-        Returns: boolean;
-      };
-    } & AgentAFunctionTypes & AgentBFunctionTypes & AgentCFunctionTypes & AgentDFunctionTypes;
+    Functions: { [K in keyof MergedFunctions]: MergedFunctions[K] };
     Enums: {
       [_ in never]: never;
     };
@@ -816,3 +823,4 @@ export interface Database {
     };
   };
 }
+

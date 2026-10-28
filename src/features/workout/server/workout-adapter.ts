@@ -1,3 +1,5 @@
+'use server';
+
 /**
  * CALISCOACHING - WORKOUT READ ADAPTER FOR EXTERNAL AGENTS (C, D, DASHBOARD)
  * Cung cấp adapter đọc dữ liệu buổi tập hoàn thành làm chứng cứ (evidence/proof) cho Agent C.

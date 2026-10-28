@@ -210,7 +210,7 @@ export async function generateBriefPreviewAction(
             recordedAt: c.created_at,
           });
           return {
-            conditionName: c.condition_name,
+            conditionName: (c as any).condition_name || (c as any).name,
             status: c.status,
             notes: c.notes,
           };
@@ -244,9 +244,9 @@ export async function generateBriefPreviewAction(
             recordedAt: m.created_at,
           });
           return {
-            medicationName: m.medication_name,
-            dosage: m.dosage,
-            frequency: m.frequency,
+            medicationName: (m as any).medication_name || (m as any).name,
+            dosage: (m as any).dosage || (m as any).dosage_instructions,
+            frequency: (m as any).frequency || '',
           };
         });
       }
