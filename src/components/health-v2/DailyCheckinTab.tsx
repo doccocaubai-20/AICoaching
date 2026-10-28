@@ -10,13 +10,14 @@ interface DailyCheckinTabProps {
   dailyCheckins: DailyCheckinEntity[];
   activities: ActivityEntity[];
   timezone?: string;
+  initialDate?: string;
 }
 
-export function DailyCheckinTab({ dailyCheckins, activities, timezone }: DailyCheckinTabProps) {
+export function DailyCheckinTab({ dailyCheckins, activities, timezone, initialDate }: DailyCheckinTabProps) {
   const userTz = timezone || 'Asia/Ho_Chi_Minh';
   // Mặc định ngày hôm nay theo giờ địa phương chuẩn xác (E5)
   const todayStr = getLocalDateString(new Date(), userTz);
-  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [selectedDate, setSelectedDate] = useState<string>(initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) && !Number.isNaN(Date.parse(initialDate)) ? initialDate : todayStr);
 
   // Tìm bản ghi của ngày đang chọn (nếu đã có)
   const existingCheckin = dailyCheckins.find((c) => c.local_date === selectedDate);

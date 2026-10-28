@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileCheck, Activity, Dumbbell, Check, X } from 'lucide-react';
 import type { SourceRef } from '../contracts/skills.contract';
+import { getEligibleEvidenceSourcesAction } from '../server/skills-actions';
 
 interface EligibleSourceItem {
   id: string;
@@ -16,56 +17,56 @@ interface EvidencePickerProps {
   selectedSource: SourceRef | null;
   onSelectSource: (source: SourceRef | null) => void;
   exerciseId?: string;
+  variantId?: string | null;
+  assistance?: string | null;
 }
 
 export function EvidencePicker({
   selectedSource,
   onSelectSource,
+  exerciseId, variantId, assistance,
 }: EvidencePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [items, setItems] = useState<EligibleSourceItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Giả lập hoặc lấy danh sách các hoạt động / kết quả gần đây
+  const [error, setError] = useState<string | null>(null);
+
+  // F1: Tải danh sách hoạt động / kết quả buổi tập thực sự của người dùng
   useEffect(() => {
+    let isMounted = true;
     if (isOpen) {
       setIsLoading(true);
-      // Tải từ fetch API nội bộ hoặc stub danh sách hoạt động nền
-      fetch('/api/health')
-        .then(() => {
-          // Trả về các mục minh họa nguồn thực
-          setItems([
-            {
-              id: 'act-sample-1',
-              sourceType: 'activity',
-              title: 'Buổi tập Calisthenics cơ bản',
-              date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-              details: '45 phút • Độ mệt RPE: 7/10',
-            },
-            {
-              id: 'sess-sample-1',
-              sourceType: 'session_result',
-              title: 'Buổi tập Full Body Calisthenics',
-              date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-              details: 'Hoàn thành 4 bài • 16 hiệp',
-            },
-          ]);
+      setError(null);
+      getEligibleEvidenceSourcesAction(exerciseId, variantId || 'standard', assistance || 'bodyweight')
+        .then((res) => {
+          if (isMounted) {
+            if (res.success && res.data) {
+              setItems(res.data);
+            } else {
+              setItems([]);
+              setError(res.message || 'Không tải được nguồn.');
+            }
+          }
         })
         .catch(() => {
-          setItems([]);
+          if (isMounted) { setItems([]); setError('Không tải được nguồn. Vui lòng thử lại.'); }
         })
         .finally(() => {
-          setIsLoading(false);
+          if (isMounted) setIsLoading(false);
         });
     }
-  }, [isOpen]);
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, exerciseId, variantId, assistance]);
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
           <FileCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-          <span>Gắn kết quả nền đã có quyền đọc (Tùy chọn)</span>
+          <span>Gắn buổi tập cùng động tác (tùy chọn)</span>
         </label>
         {selectedSource && (
           <button
@@ -109,7 +110,7 @@ export function EvidencePicker({
             onClick={() => setIsOpen(!isOpen)}
             className="w-full text-left p-2.5 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-xs text-slate-600 dark:text-slate-400 flex items-center justify-between transition-colors"
           >
-            <span>Chọn từ Nhật ký hoạt động hoặc Buổi tập đã hoàn thành...</span>
+            <span>Chọn buổi tập đã hoàn thành cùng động tác...</span>
             <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">Mở danh sách</span>
           </button>
         </div>
@@ -121,7 +122,7 @@ export function EvidencePicker({
             Nguồn hoạt động nền khả dụng:
           </div>
 
-          {isLoading ? (
+          {error ? <div role="alert" className="text-xs text-red-600">{error}</div> : isLoading ? (
             <div className="text-xs text-slate-400 py-2 text-center">Đang tải nguồn...</div>
           ) : items.length === 0 ? (
             <div className="text-xs text-slate-400 py-2 text-center">

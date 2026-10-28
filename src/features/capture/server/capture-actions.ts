@@ -193,7 +193,8 @@ export async function commitCaptureBatchAction(
           id: rec.id,
           label: `Hoạt động: ${rec.activity_type}`,
           detail: 'Đã lưu vào nhật ký luyện tập',
-          viewUrl: '/profile?tab=health',
+          // F5: Mở trực tiếp nhật ký hoạt động có highlight ID
+          viewUrl: `/activities?highlight=${rec.id}`,
         });
       } else if (rec.source_type === 'daily_checkins') {
         records.push({
@@ -201,7 +202,8 @@ export async function commitCaptureBatchAction(
           id: rec.id,
           label: `Check-in sinh hoạt ngày ${rec.local_date}`,
           detail: rec.action === 'updated' ? 'Đã cập nhật sinh hoạt ngày' : 'Đã tạo mới check-in sinh hoạt',
-          viewUrl: '/profile?tab=health',
+          // F5: Mở tab checkin tại đúng ngày
+          viewUrl: `/profile?tab=checkin&date=${rec.local_date}`,
         });
       } else if (rec.source_type === 'observations') {
         records.push({
@@ -209,7 +211,8 @@ export async function commitCaptureBatchAction(
           id: rec.id,
           label: `Chỉ số: ${rec.metric_type}`,
           detail: 'Đã lưu chỉ số cơ thể tự khai',
-          viewUrl: '/profile?tab=health',
+          // F5: Mở tab vitals có highlight ID
+          viewUrl: `/profile?tab=vitals&highlight=${rec.id}`,
         });
       }
     }

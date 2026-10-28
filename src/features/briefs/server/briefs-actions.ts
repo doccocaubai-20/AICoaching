@@ -1,9 +1,10 @@
 'use server';
 
 import crypto from 'node:crypto';
+import { signBriefPreview, verifyBriefPreview } from '../contracts/preview-integrity';
 import { requireAuthenticatedUser } from '@/lib/server/auth-guard';
 import { getAgentASupabaseClient } from '@/features/common/supabase-a';
-import { DEFAULT_APP_TIMEZONE, getLocalDateString } from '@/lib/date-utils';
+import { DEFAULT_APP_TIMEZONE, getLocalDateString, getLocalDateStartInstant, getLocalDateEndInstant } from '@/lib/date-utils';
 import {
   CreateBriefSnapshotInput,
   CreateBriefSnapshotSchema,
@@ -69,14 +70,31 @@ export async function generateBriefPreviewAction(
     const sourceRefs: SourceRef[] = [];
     const missingDataNotes: string[] = [];
 
+    // Tính toán ranh giới ngày địa phương chuẩn xác theo timezone người dùng (V7)
+    const startInstant = getLocalDateStartInstant(dateRangeStart, timezone).toISOString();
+    const endInstant = getLocalDateEndInstant(dateRangeEnd, timezone).toISOString();
+
     // 1. Lấy dữ liệu Activities (Nhật ký luyện tập)
-    const { data: rawActivities } = await supabase
+    // V6: Lọc bỏ is_planned = true (chỉ tính các buổi đã tập thực sự)
+    // V5: Kiểm tra actError, không được nuốt lỗi DB thành rỗng
+    const { data: rawActivities, error: actError } = await supabase
       .from('activities')
       .select('*')
       .eq('user_id', user.id)
-      .gte('start_at', `${dateRangeStart}T00:00:00.000Z`)
-      .lte('start_at', `${dateRangeEnd}T23:59:59.999Z`)
+      .eq('is_planned', false)
+      .gte('start_at', startInstant)
+      .lte('start_at', endInstant)
       .order('start_at', { ascending: true });
+
+    if (actError) {
+      return {
+        success: false,
+        error: {
+          code: 'DB_READ_ERROR',
+          message: 'Không thể đọc dữ liệu nhật ký hoạt động. Vui lòng thử lại.',
+        },
+      };
+    }
 
     const activities = rawActivities || [];
     const activitiesCountByType: Record<string, number> = {};
@@ -90,7 +108,7 @@ export async function generateBriefPreviewAction(
       sourceRefs.push({
         sourceType: 'activities',
         sourceId: act.id,
-        fingerprint: computeFingerprint(actUpdatedAt),
+        fingerprint: computeFingerprint(actUpdatedAt), sourceUpdatedAt: actUpdatedAt,
         recordedAt: act.created_at,
         summaryLabel: `Hoạt động ${act.activity_type} (${act.duration_minutes} phút)`,
       });
@@ -106,13 +124,24 @@ export async function generateBriefPreviewAction(
     });
 
     // 2. Lấy dữ liệu Daily Checkins (Giấc ngủ, sinh hoạt)
-    const { data: rawCheckins } = await supabase
+    // V5: Kiểm tra chkError, không nuốt lỗi DB
+    const { data: rawCheckins, error: chkError } = await supabase
       .from('daily_checkins')
       .select('*')
       .eq('user_id', user.id)
       .gte('local_date', dateRangeStart)
       .lte('local_date', dateRangeEnd)
       .order('local_date', { ascending: true });
+
+    if (chkError) {
+      return {
+        success: false,
+        error: {
+          code: 'DB_READ_ERROR',
+          message: 'Không thể đọc dữ liệu điểm danh sinh hoạt. Vui lòng thử lại.',
+        },
+      };
+    }
 
     const checkins = rawCheckins || [];
     let totalSleepMinutes = 0;
@@ -128,7 +157,7 @@ export async function generateBriefPreviewAction(
       sourceRefs.push({
         sourceType: 'daily_checkins',
         sourceId: chk.id,
-        fingerprint: computeFingerprint(chkUpdatedAt),
+        fingerprint: computeFingerprint(chkUpdatedAt), sourceUpdatedAt: chkUpdatedAt,
         recordedAt: chk.created_at,
         summaryLabel: `Check-in ngày ${chk.local_date}`,
       });
@@ -143,20 +172,34 @@ export async function generateBriefPreviewAction(
     });
 
     // 3. Lấy dữ liệu Observations (Chỉ số cơ thể)
-    const { data: rawObservations } = await supabase
+    // V5: Kiểm tra obsError, không nuốt lỗi DB
+    // V7: Sử dụng ranh giới múi giờ startInstant / endInstant
+    const { data: rawObservations, error: obsError } = await supabase
       .from('observations')
       .select('*')
       .eq('user_id', user.id)
-      .gte('observed_at', `${dateRangeStart}T00:00:00.000Z`)
-      .lte('observed_at', `${dateRangeEnd}T23:59:59.999Z`)
+      .gte('observed_at', startInstant)
+      .lte('observed_at', endInstant)
       .order('observed_at', { ascending: true });
+
+    if (obsError) {
+      return {
+        success: false,
+        error: {
+          code: 'DB_READ_ERROR',
+          message: 'Không thể đọc dữ liệu chỉ số cơ thể. Vui lòng thử lại.',
+        },
+      };
+    }
 
     const observations = rawObservations || [];
     const vitalObservations = observations.map((obs) => {
+      // V3: Dùng updated_at || created_at để phát hiện UPDATE
+      const obsUpdatedAt = (obs as any).updated_at || obs.created_at;
       sourceRefs.push({
         sourceType: 'observations',
         sourceId: obs.id,
-        fingerprint: computeFingerprint(obs.created_at),
+        fingerprint: computeFingerprint(obsUpdatedAt), sourceUpdatedAt: obsUpdatedAt,
         recordedAt: obs.created_at,
         summaryLabel: `Chỉ số ${obs.metric_type}: ${obs.metric_value} ${obs.metric_unit}`,
       });
@@ -198,15 +241,26 @@ export async function generateBriefPreviewAction(
       let medicationsData: any[] = [];
 
       if (includedCategories.includes('conditions')) {
-        const { data } = await supabase
+        const { data, error: condError } = await supabase
           .from('health_conditions')
           .select('*')
           .eq('user_id', user.id);
+
+        if (condError) {
+          return {
+            success: false,
+            error: {
+              code: 'DB_READ_ERROR',
+              message: 'Không thể đọc dữ liệu bệnh lý/tình trạng sức khỏe. Vui lòng thử lại.',
+            },
+          };
+        }
+
         conditionsData = (data || []).map((c) => {
           sourceRefs.push({
             sourceType: 'conditions',
             sourceId: c.id,
-            fingerprint: computeFingerprint(c.updated_at || c.created_at),
+            fingerprint: computeFingerprint(c.updated_at || c.created_at), sourceUpdatedAt: c.updated_at || c.created_at,
             recordedAt: c.created_at,
           });
           return {
@@ -218,12 +272,24 @@ export async function generateBriefPreviewAction(
       }
 
       if (includedCategories.includes('allergies')) {
-        const { data } = await supabase.from('allergies').select('*').eq('user_id', user.id);
+        const { data, error: algError } = await supabase.from('allergies').select('*').eq('user_id', user.id);
+
+        if (algError) {
+          return {
+            success: false,
+            error: {
+              code: 'DB_READ_ERROR',
+              message: 'Không thể đọc dữ liệu dị ứng. Vui lòng thử lại.',
+            },
+          };
+        }
+
         allergiesData = (data || []).map((a) => {
           sourceRefs.push({
             sourceType: 'allergies',
             sourceId: a.id,
-            fingerprint: computeFingerprint(a.created_at),
+            // V3: Dùng updated_at || created_at để nhận diện cập nhật
+            fingerprint: computeFingerprint(a.updated_at || a.created_at), sourceUpdatedAt: a.updated_at || a.created_at,
             recordedAt: a.created_at,
           });
           return {
@@ -235,12 +301,23 @@ export async function generateBriefPreviewAction(
       }
 
       if (includedCategories.includes('medications')) {
-        const { data } = await supabase.from('medications').select('*').eq('user_id', user.id);
+        const { data, error: medError } = await supabase.from('medications').select('*').eq('user_id', user.id);
+
+        if (medError) {
+          return {
+            success: false,
+            error: {
+              code: 'DB_READ_ERROR',
+              message: 'Không thể đọc dữ liệu danh mục thuốc. Vui lòng thử lại.',
+            },
+          };
+        }
+
         medicationsData = (data || []).map((m) => {
           sourceRefs.push({
             sourceType: 'medications',
             sourceId: m.id,
-            fingerprint: computeFingerprint(m.updated_at || m.created_at),
+            fingerprint: computeFingerprint(m.updated_at || m.created_at), sourceUpdatedAt: m.updated_at || m.created_at,
             recordedAt: m.created_at,
           });
           return {
@@ -296,6 +373,7 @@ export async function generateBriefPreviewAction(
       sourceRefs,
     };
 
+    payload.confirmationToken = signBriefPreview(user.id, parsed.data, payload);
     return {
       success: true,
       data: payload,
@@ -313,13 +391,42 @@ export async function generateBriefPreviewAction(
 
 /**
  * Server action: Lưu Snapshot bất biến vào bảng health_briefs
+ * V4: Server tự tạo & xác minh snapshot từ nguồn thật thay vì tin nhận trực tiếp payload từ client
  */
 export async function saveBriefSnapshotAction(
   input: CreateBriefSnapshotInput,
-  snapshot: BriefSnapshotPayload
+  _untrustedSnapshot?: BriefSnapshotPayload
 ): Promise<ActionResult<{ briefId: string }>> {
   try {
     const { user } = await requireAuthenticatedUser();
+    const parsed = CreateBriefSnapshotSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: parsed.error.issues[0]?.message || 'Dữ liệu đầu vào không hợp lệ.',
+        },
+      };
+    }
+
+    // V4: Tạo snapshot phía server từ nguồn thật, đảm bảo dữ liệu toàn vẹn
+    const previewRes = await generateBriefPreviewAction(parsed.data);
+    if (!previewRes.success || !previewRes.data) {
+      return {
+        success: false,
+        error: previewRes.error || {
+          code: 'PREVIEW_GENERATION_FAILED',
+          message: 'Không thể tạo bản tóm tắt xác minh từ nguồn dữ liệu.',
+        },
+      };
+    }
+
+    const verifiedSnapshot = previewRes.data;
+    if (!_untrustedSnapshot || !verifyBriefPreview(user.id, parsed.data, _untrustedSnapshot, verifiedSnapshot)) {
+      return { success:false, error:{code:'PREVIEW_STALE',message:'Dữ liệu hoặc lựa chọn đã thay đổi. Vui lòng xem trước lại trước khi lưu.'} };
+    }
+    const {confirmationToken:_confirmationToken,...storedSnapshot}=verifiedSnapshot;
     const supabase = await getAgentASupabaseClient();
     if (!supabase) {
       return { success: false, error: { code: 'DB_ERROR', message: 'Không thể kết nối DB' } };
@@ -329,15 +436,15 @@ export async function saveBriefSnapshotAction(
       .from('health_briefs')
       .insert({
         user_id: user.id,
-        brief_type: input.briefType,
-        title: input.title,
-        date_range_start: input.dateRangeStart,
-        date_range_end: input.dateRangeEnd,
-        included_categories: input.includedCategories,
-        snapshot_payload: snapshot as any,
-        source_fingerprints: snapshot.sourceRefs as any,
-        user_notes: input.userNotes || null,
-        ai_summary: input.enableAISummary ? 'Bản tóm tắt tự động từ dữ liệu tự khai của người dùng.' : null,
+        brief_type: parsed.data.briefType,
+        title: parsed.data.title,
+        date_range_start: parsed.data.dateRangeStart,
+        date_range_end: parsed.data.dateRangeEnd,
+        included_categories: parsed.data.includedCategories,
+        snapshot_payload: storedSnapshot as any,
+        source_fingerprints: verifiedSnapshot.sourceRefs as any,
+        user_notes: parsed.data.userNotes || null,
+        ai_summary: parsed.data.enableAISummary ? 'Bản tóm tắt tự động từ dữ liệu tự khai của người dùng.' : null,
       })
       .select('id')
       .single();
@@ -473,8 +580,9 @@ export async function revokeShareLinkAction(
 }
 
 /**
- * Server function: Đọc dữ liệu chia sẻ cho người nhận bằng bearer token
- * Kiểm tra hash token, hạn sử dụng, thu hồi và STALE DETECTION trên nguồn DB!
+ * Server function: Đọc dữ liệu chia sẻ cho người nhận bằng bearer token (V2 & V3)
+ * Sử dụng RPC SECURITY DEFINER get_public_shared_brief để người nhận (anon / public)
+ * đọc được bản tóm tắt an toàn, tự động kiểm tra TTL, thu hồi và Stale Detection trên toàn bộ nguồn!
  */
 export async function getSharedBriefAction(token: string): Promise<SharedBriefViewResult> {
   if (!token || token.length < 16) {
@@ -489,107 +597,61 @@ export async function getSharedBriefAction(token: string): Promise<SharedBriefVi
   // 1. Tính hash token
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-  // 2. Tìm bản ghi share
-  const { data: share, error: shareErr } = await supabase
-    .from('brief_shares')
-    .select('id, brief_id, user_id, token_hash, expires_at, revoked_at, access_count, last_accessed_at, created_at')
-    .eq('token_hash', tokenHash)
-    .maybeSingle();
+  // 2. Gọi RPC SECURITY DEFINER get_public_shared_brief (V2 & V3)
+  const { data: rpcResult, error: rpcErr } = await (supabase as any).rpc('get_public_shared_brief', {
+    p_token_hash: tokenHash,
+  });
 
-  if (shareErr || !share) {
+  if (rpcErr || !rpcResult) {
     return { status: 'not_found', message: 'Không tìm thấy liên kết chia sẻ hoặc liên kết đã bị xóa.' };
   }
 
-  // Lấy health_brief tương ứng
-  const { data: brief, error: briefErr } = await supabase
-    .from('health_briefs')
-    .select('*')
-    .eq('id', share.brief_id)
-    .maybeSingle();
-
-  if (briefErr || !brief) {
-    return { status: 'not_found', message: 'Không tìm thấy bản tóm tắt liên kết.' };
+  if (rpcResult.status === 'not_found') {
+    return { status: 'not_found', message: rpcResult.message || 'Không tìm thấy liên kết chia sẻ.' };
   }
 
-  // 3. Kiểm tra Thu hồi (Revoked)
-  if (share.revoked_at) {
+  if (rpcResult.status === 'revoked') {
     return {
       status: 'revoked',
-      message: 'Chủ sở hữu đã thu hồi quyền truy cập của liên kết này.',
+      message: rpcResult.message || 'Chủ sở hữu đã thu hồi quyền truy cập của liên kết này.',
     };
   }
 
-  // 4. Kiểm tra Hết hạn (Expired)
-  const now = new Date();
-  const expiresAt = new Date(share.expires_at);
-  if (expiresAt < now) {
+  if (rpcResult.status === 'expired') {
     return {
       status: 'expired',
-      message: `Liên kết chia sẻ này đã hết hạn vào ${expiresAt.toLocaleString('vi-VN')}.`,
+      message: rpcResult.message || 'Liên kết chia sẻ này đã hết thời hạn sử dụng.',
     };
   }
 
-  const snapshot: BriefSnapshotPayload = brief.snapshot_payload as any;
-  const sourceRefs: SourceRef[] = (brief.source_fingerprints as any) || [];
-
-  // 5. STALE DETECTION: Kiểm tra xem bản ghi nguồn có bị sửa/xóa không
-  const activityRefs = sourceRefs.filter((r) => r.sourceType === 'activities');
-  if (activityRefs.length > 0) {
-    const activityIds = activityRefs.map((r) => r.sourceId);
-    const { data: currentActivities } = await supabase
-      .from('activities')
-      .select('id, updated_at, created_at')
-      .in('id', activityIds);
-
-    const currentMap = new Map((currentActivities || []).map((a) => [a.id, a]));
-
-    for (const ref of activityRefs) {
-      const current = currentMap.get(ref.sourceId);
-      if (!current) {
-        // Bản ghi nguồn đã bị XÓA
-        return {
-          status: 'stale',
-          message: 'Bản tóm tắt tạm ngừng hiển thị vì dữ liệu nguồn đã bị thay đổi hoặc xóa bởi chủ sở hữu.',
-          staleDetails: {
-            staleSourceCount: 1,
-            message: 'Bản ghi hoạt động gốc không còn tồn tại.',
-          },
-        };
-      }
-
-      const currentFp = computeFingerprint(current.updated_at || current.created_at);
-      if (currentFp !== ref.fingerprint) {
-        // Bản ghi nguồn đã bị SỬA
-        return {
-          status: 'stale',
-          message: 'Bản tóm tắt tạm ngừng hiển thị vì dữ liệu nguồn đã được cập nhật bởi chủ sở hữu.',
-          staleDetails: {
-            staleSourceCount: 1,
-            message: 'Nội dung buổi tập nguồn đã được chỉnh sửa.',
-          },
-        };
-      }
-    }
+  if (rpcResult.status === 'stale') {
+    return {
+      status: 'stale',
+      message:
+        rpcResult.message ||
+        'Bản tóm tắt tạm ngừng hiển thị vì dữ liệu nguồn đã bị thay đổi hoặc xóa bởi chủ sở hữu.',
+      staleDetails: {
+        staleSourceCount: rpcResult.stale_details?.stale_source_count || 1,
+        message: rpcResult.stale_details?.message || 'Dữ liệu nguồn đã thay đổi.',
+      },
+    };
   }
 
-  // 6. Cập nhật lượt truy cập (access_count & last_accessed_at)
-  await supabase
-    .from('brief_shares')
-    .update({
-      access_count: (share.access_count || 0) + 1,
-      last_accessed_at: new Date().toISOString(),
-    })
-    .eq('id', share.id);
+  if (rpcResult.status === 'active') {
+    return {
+      status: 'active',
+      shareInfo: {
+        expiresAt: rpcResult.expires_at,
+        createdAt: rpcResult.created_at,
+      },
+      snapshot: rpcResult.snapshot,
+      userNotes: rpcResult.user_notes,
+      aiSummary: rpcResult.ai_summary,
+    };
+  }
 
-  // 7. Trả về Safe Snapshot View (Allowlist data only - KHÔNG có user_id hay raw entities)
   return {
-    status: 'active',
-    shareInfo: {
-      expiresAt: share.expires_at,
-      createdAt: share.created_at,
-    },
-    snapshot,
-    userNotes: brief.user_notes,
-    aiSummary: brief.ai_summary,
+    status: 'not_found',
+    message: 'Trạng thái liên kết không xác định.',
   };
 }

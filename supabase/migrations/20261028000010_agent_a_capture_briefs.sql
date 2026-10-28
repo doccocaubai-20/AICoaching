@@ -116,6 +116,7 @@ DECLARE
     v_new_activity_id UUID;
     v_new_checkin_id UUID;
     v_new_obs_id UUID;
+    v_act_idx INT := 0;
     v_created_records JSONB := '[]'::jsonb;
     v_activity_type TEXT;
     v_duration INT;
@@ -166,6 +167,7 @@ BEGIN
     IF p_activities IS NOT NULL AND jsonb_array_length(p_activities) > 0 THEN
         FOR v_item IN SELECT * FROM jsonb_array_elements(p_activities)
         LOOP
+            v_act_idx := v_act_idx + 1;
             v_activity_type := v_item->>'activity_type';
             v_duration := (v_item->>'duration_minutes')::INT;
             v_fatigue := (v_item->>'fatigue_level')::INT;
@@ -184,7 +186,8 @@ BEGIN
                 duration_minutes,
                 fatigue_level,
                 notes,
-                source
+                source,
+                idempotency_key
             ) VALUES (
                 v_user_id,
                 v_activity_type,
@@ -193,7 +196,8 @@ BEGIN
                 v_duration,
                 v_fatigue,
                 v_notes,
-                'manual_entry'
+                'manual_entry',
+                p_idempotency_key || ':act:' || v_act_idx
             )
             RETURNING id INTO v_new_activity_id;
 
@@ -361,3 +365,144 @@ BEGIN
     );
 END;
 $$;
+
+-- ------------------------------------------------------------------------------
+-- 5. FUNCTION ĐỌC BẢN CHIA SẺ BẰNG TOKEN HASH CHO RECIPIENT (PUBLIC/ANON) (V2 & V3)
+-- ------------------------------------------------------------------------------
+ALTER TABLE public.observations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+DROP TRIGGER IF EXISTS trg_observations_updated_at ON public.observations;
+CREATE TRIGGER trg_observations_updated_at
+    BEFORE UPDATE ON public.observations
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE OR REPLACE FUNCTION public.get_public_shared_brief(p_token_hash TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_share RECORD;
+    v_brief RECORD;
+    v_ref JSONB;
+    v_source_type TEXT;
+    v_source_id UUID;
+    v_current_ts TIMESTAMPTZ;
+BEGIN
+    IF p_token_hash IS NULL OR length(trim(p_token_hash)) < 16 THEN
+        RETURN jsonb_build_object('status', 'not_found', 'message', 'Mã liên kết không hợp lệ.');
+    END IF;
+
+    -- Tìm bản ghi share khớp token_hash
+    SELECT id, brief_id, user_id, expires_at, revoked_at, access_count, last_accessed_at, created_at
+    INTO v_share
+    FROM public.brief_shares
+    WHERE token_hash = trim(p_token_hash)
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('status', 'not_found', 'message', 'Không tìm thấy liên kết chia sẻ hoặc liên kết đã bị xóa.');
+    END IF;
+
+    -- Kiểm tra Thu hồi (Revoked)
+    IF v_share.revoked_at IS NOT NULL THEN
+        RETURN jsonb_build_object('status', 'revoked', 'message', 'Chủ sở hữu đã thu hồi quyền truy cập của liên kết này.');
+    END IF;
+
+    -- Kiểm tra Hết hạn (Expired)
+    IF v_share.expires_at < timezone('utc', now()) THEN
+        RETURN jsonb_build_object('status', 'expired', 'message', 'Liên kết chia sẻ này đã hết thời hạn sử dụng.');
+    END IF;
+
+    -- Lấy thông tin health_briefs tương ứng
+    SELECT id, user_id, brief_type, title, date_range_start, date_range_end, snapshot_payload, source_fingerprints, user_notes, ai_summary, created_at
+    INTO v_brief
+    FROM public.health_briefs
+    WHERE id = v_share.brief_id
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('status', 'not_found', 'message', 'Không tìm thấy bản tóm tắt liên kết.');
+    END IF;
+
+    -- Stale Detection (V3): Kiểm tra toàn bộ nguồn dữ liệu được lưu trong source_fingerprints
+    IF v_brief.source_fingerprints IS NOT NULL AND jsonb_array_length(v_brief.source_fingerprints) > 0 THEN
+        FOR v_ref IN SELECT * FROM jsonb_array_elements(v_brief.source_fingerprints)
+        LOOP
+            v_source_type := v_ref->>'sourceType';
+            v_source_id := (v_ref->>'sourceId')::uuid;
+            v_current_ts := NULL;
+
+            IF v_source_type = 'activities' THEN
+                SELECT coalesce(updated_at, created_at) INTO v_current_ts
+                FROM public.activities WHERE id = v_source_id AND user_id = v_brief.user_id;
+            ELSIF v_source_type = 'daily_checkins' THEN
+                SELECT coalesce(updated_at, created_at) INTO v_current_ts
+                FROM public.daily_checkins WHERE id = v_source_id AND user_id = v_brief.user_id;
+            ELSIF v_source_type = 'observations' THEN
+                SELECT coalesce(updated_at, created_at) INTO v_current_ts
+                FROM public.observations WHERE id = v_source_id AND user_id = v_brief.user_id;
+            ELSIF v_source_type IN ('conditions', 'health_conditions') THEN
+                SELECT coalesce(updated_at, created_at) INTO v_current_ts
+                FROM public.health_conditions WHERE id = v_source_id AND user_id = v_brief.user_id;
+            ELSIF v_source_type = 'medications' THEN
+                SELECT coalesce(updated_at, created_at) INTO v_current_ts
+                FROM public.medications WHERE id = v_source_id AND user_id = v_brief.user_id;
+            ELSIF v_source_type = 'allergies' THEN
+                SELECT coalesce(updated_at, created_at) INTO v_current_ts
+                FROM public.allergies WHERE id = v_source_id AND user_id = v_brief.user_id;
+            END IF;
+
+            -- Nếu bản ghi nguồn đã bị xóa hoặc không thuộc về người dùng
+            IF v_current_ts IS NULL THEN
+                RETURN jsonb_build_object(
+                    'status', 'stale',
+                    'message', 'Bản tóm tắt tạm ngừng hiển thị vì dữ liệu nguồn đã bị thay đổi hoặc xóa bởi chủ sở hữu.',
+                    'stale_details', jsonb_build_object(
+                        'stale_source_count', 1,
+                        'message', 'Bản ghi nguồn (' || v_source_type || ') không còn tồn tại.'
+                    )
+                );
+            END IF;
+
+            -- Nếu bản ghi nguồn đã bị sửa sau khi brief snapshot được tạo
+            IF v_current_ts > v_brief.created_at THEN
+                RETURN jsonb_build_object(
+                    'status', 'stale',
+                    'message', 'Bản tóm tắt tạm ngừng hiển thị vì dữ liệu nguồn đã được cập nhật bởi chủ sở hữu.',
+                    'stale_details', jsonb_build_object(
+                        'stale_source_count', 1,
+                        'message', 'Nội dung dữ liệu nguồn (' || v_source_type || ') đã được cập nhật sau khi tạo bản tóm tắt.'
+                    )
+                );
+            END IF;
+        END LOOP;
+    END IF;
+
+    -- Cập nhật số lượt truy cập và thời điểm truy cập gần nhất
+    UPDATE public.brief_shares
+    SET access_count = access_count + 1,
+        last_accessed_at = timezone('utc', now())
+    WHERE id = v_share.id;
+
+    -- Trả về dữ liệu an toàn (CHỈ SNAPSHOT ĐÃ ALLOWLIST, KHÔNG LỘ RAW ENTITIES CỦA USER KHÁC)
+    RETURN jsonb_build_object(
+        'status', 'active',
+        'share_id', v_share.id,
+        'brief_id', v_brief.id,
+        'user_id', v_brief.user_id,
+        'brief_type', v_brief.brief_type,
+        'title', v_brief.title,
+        'date_range_start', v_brief.date_range_start,
+        'date_range_end', v_brief.date_range_end,
+        'snapshot', v_brief.snapshot_payload,
+        'source_refs', v_brief.source_fingerprints,
+        'user_notes', v_brief.user_notes,
+        'ai_summary', v_brief.ai_summary,
+        'expires_at', v_share.expires_at,
+        'created_at', v_share.created_at
+    );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_public_shared_brief(TEXT) TO anon, authenticated, service_role;

@@ -8,6 +8,7 @@ import { formatWeekRangeVN } from './group-utils';
 
 interface CommitmentFormModalProps {
   isOpen: boolean;
+  initialDraft?: {content:string;notes:string} | null;
   onClose: () => void;
   groupId: string;
   weekStart: string;
@@ -19,11 +20,11 @@ export function CommitmentFormModal({
   onClose,
   groupId,
   weekStart,
-  existingCommitment,
+  existingCommitment, initialDraft,
 }: CommitmentFormModalProps) {
   const [isPending, startTransition] = useTransition();
 
-  const [content, setContent] = useState(existingCommitment?.content || '');
+  const [content, setContent] = useState(existingCommitment?.content || initialDraft?.content || '');
   const [targetCount, setTargetCount] = useState<string>(
     existingCommitment?.target_count ? String(existingCommitment.target_count) : ''
   );
@@ -33,7 +34,7 @@ export function CommitmentFormModal({
   const [status, setStatus] = useState<CommitmentStatus>(
     existingCommitment?.status || 'planned'
   );
-  const [notes, setNotes] = useState(existingCommitment?.notes || '');
+  const [notes, setNotes] = useState([existingCommitment?.notes,initialDraft?.notes].filter(Boolean).join('\n'));
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -98,6 +99,7 @@ export function CommitmentFormModal({
           </button>
         </div>
 
+        {initialDraft && <p className="text-xs text-emerald-700">Bản nháp từ buổi tập của bạn. Kiểm tra nội dung và số buổi trước khi bấm lưu; tiến độ không tự tăng.</p>}
         {errorMsg && (
           <div className="p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 rounded-lg text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />

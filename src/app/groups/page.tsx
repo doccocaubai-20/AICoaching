@@ -1,4 +1,5 @@
 import React from 'react';
+import { getOwnedWorkoutDraft } from '@/lib/server/workout-followup';
 import { redirect } from 'next/navigation';
 import { getSupabaseEnvStatus } from '@/lib/supabase/env';
 import { getAuthenticatedUser } from '@/lib/server/auth-guard';
@@ -12,7 +13,7 @@ export const metadata = {
   description: 'Nhóm nhỏ 1-5 người quen cùng giữ kỷ luật, cam kết tuần và phản hồi động viên.',
 };
 
-export default async function GroupsPage() {
+export default async function GroupsPage({searchParams}: {searchParams?:Promise<{runId?:string}>}) {
   const envStatus = getSupabaseEnvStatus();
 
   if (!envStatus.isConfigured) {
@@ -80,9 +81,11 @@ export default async function GroupsPage() {
     }
   }
 
+  const {runId}=searchParams ? await searchParams : {};
+  const draft=await getOwnedWorkoutDraft(runId);
   return (
     <div className="p-4 max-w-3xl mx-auto pb-24">
-      <GroupsManager groups={groupsData} />
+      <GroupsManager groups={groupsData} workoutDraft={draft} />
     </div>
   );
 }

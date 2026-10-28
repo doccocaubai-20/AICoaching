@@ -1,12 +1,14 @@
 import React from 'react';
 import Link from 'next/link';
 import { Target, Lock, AlertCircle } from 'lucide-react';
-import { getJourneyDetailsAction } from '@/features/skills/server/skills-actions';
+import { getJourneyDetailsAction, getEligibleEvidenceSourcesAction } from '@/features/skills/server/skills-actions';
 import { JourneyClientContainer } from './JourneyClientContainer';
 
 export const dynamic = 'force-dynamic';
 
-export default async function JourneyPage() {
+export default async function JourneyPage({searchParams}: {searchParams?:Promise<{runId?:string}>}) {
+  const {runId} = searchParams ? await searchParams : {};
+
   const result = await getJourneyDetailsAction('pull_up_mastery');
 
   if (!result.success || !result.data) {
@@ -53,9 +55,19 @@ export default async function JourneyPage() {
     );
   }
 
+  let initialEvidence: import('@/features/skills/contracts/skills.contract').SourceRef | null = null;
+  let initialMilestoneId: string | undefined;
+  if (runId && /^[0-9a-f-]{36}$/i.test(runId)) {
+    for (const {milestone:m} of result.data.milestones) {
+      const sources=await getEligibleEvidenceSourcesAction(m.exerciseId,m.variantId || 'standard',m.assistance || 'bodyweight',runId);
+      const source=sources.data?.[0];
+      if (source) { initialEvidence={sourceType:source.sourceType,sourceId:source.id,recordedAt:source.date}; initialMilestoneId=m.id; break; }
+    }
+  }
   return (
     <main className="min-h-screen bg-slate-50/50 dark:bg-slate-950 p-4 sm:p-6">
-      <JourneyClientContainer initialDetails={result.data} />
+      {runId && !initialEvidence && <p role="status" className="max-w-4xl mx-auto mb-4 p-3 rounded-xl bg-amber-50 text-amber-900 text-sm">Buổi tập này chưa có kết quả đúng động tác, biến thể và mức hỗ trợ của hành trình. Bạn vẫn có thể ghi một lần thử độc lập; thành tích không được tự đánh dấu đạt.</p>}
+      <JourneyClientContainer key={runId || 'default'} initialDetails={result.data} initialEvidence={initialEvidence} initialMilestoneId={initialMilestoneId} />
     </main>
   );
 }

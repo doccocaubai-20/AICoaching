@@ -25,6 +25,9 @@ vi.mock('react', async importOriginal => {
   return { ...original, ...hooks, default: { ...original, ...hooks } };
 });
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+}));
 vi.mock('@/lib/server/auth-guard', () => ({
   requireAuthenticatedUser: async () => ({ user: { id: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa' } }),
 }));

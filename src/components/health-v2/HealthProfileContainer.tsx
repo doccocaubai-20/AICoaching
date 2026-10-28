@@ -64,6 +64,9 @@ export interface HealthProfileContainerProps {
   healthEventsError?: string | null;
   documentsError?: string | null;
   activitiesError?: string | null;
+  initialTab?: string;
+  initialDate?: string;
+  highlightId?: string;
 }
 
 export function HealthProfileContainer({
@@ -95,8 +98,11 @@ export function HealthProfileContainer({
   healthEventsError,
   documentsError,
   activitiesError,
+  initialTab, initialDate, highlightId,
 }: HealthProfileContainerProps) {
-  const [activeTab, setActiveTab] = useState<string>('overview');
+  const validTabs = ['overview', 'vitals', 'checkin', 'medical', 'events_docs', 'training'];
+  const defaultTab = initialTab && validTabs.includes(initialTab) ? initialTab : 'overview';
+  const [activeTab, setActiveTab] = useState<string>(defaultTab);
 
   const errorList = [
     profileError,
@@ -212,11 +218,12 @@ export function HealthProfileContainer({
         )}
 
         {activeTab === 'vitals' && (
-          <VitalsTab observations={observations} bloodPressures={bloodPressures} />
+          <VitalsTab highlightId={highlightId} observations={observations} bloodPressures={bloodPressures} />
         )}
 
         {activeTab === 'checkin' && (
           <DailyCheckinTab
+            initialDate={initialDate}
             dailyCheckins={dailyCheckins}
             activities={activities}
             timezone={healthProfile?.timezone || DEFAULT_APP_TIMEZONE}

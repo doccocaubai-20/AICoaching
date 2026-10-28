@@ -1,4 +1,9 @@
-import { getLocalDateString, getPastLocalDateString, DEFAULT_APP_TIMEZONE } from '@/lib/date-utils';
+import {
+  getLocalDateString,
+  getPastLocalDateString,
+  getLocalDateStartInstant,
+  DEFAULT_APP_TIMEZONE,
+} from '@/lib/date-utils';
 import {
   CaptureDraft,
   DraftActivityItem,

@@ -9,27 +9,25 @@ import { VideoUploadDropzone } from '../../media/components/VideoUploadDropzone'
 
 interface AttemptRecordModalProps {
   milestone: SkillMilestone;
+  initialSource?: SourceRef | null;
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }
 
 export function AttemptRecordModal({
-  milestone,
+  milestone, initialSource,
   isOpen,
   onClose,
   onSuccess,
 }: AttemptRecordModalProps) {
-  const [actualReps, setActualReps] = useState<string>(
-    milestone.targetReps ? String(milestone.targetReps) : ''
-  );
-  const [actualDuration, setActualDuration] = useState<string>(
-    milestone.targetDurationSeconds ? String(milestone.targetDurationSeconds) : ''
-  );
+  // F2: Actual để trống ban đầu, KHÔNG gán mặc định bằng target (Thành tích thực khác mục tiêu)
+  const [actualReps, setActualReps] = useState<string>('');
+  const [actualDuration, setActualDuration] = useState<string>('');
   const [assistance, setAssistance] = useState<string>(milestone.assistance || 'bodyweight');
   const [notes, setNotes] = useState<string>('');
   const [isAchievedSelfReported, setIsAchievedSelfReported] = useState<boolean>(false);
-  const [selectedSource, setSelectedSource] = useState<SourceRef | null>(null);
+  const [selectedSource, setSelectedSource] = useState<SourceRef | null>(initialSource || null);
   const [uploadedVideoId, setUploadedVideoId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -107,15 +105,19 @@ export function AttemptRecordModal({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4 text-xs sm:text-sm">
-          {/* Thông tin bài tập & Biến thể */}
+          {/* Thông tin bài tập & Mục tiêu mốc */}
           <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 text-xs">
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Bài tập:</span>
-              <span className="font-semibold text-slate-800 dark:text-slate-200">{milestone.exerciseId}</span>
+              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Bài tập / Biến thể:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">{milestone.exerciseId} ({milestone.variantId})</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Biến thể:</span>
-              <span className="font-semibold text-slate-800 dark:text-slate-200">{milestone.variantId}</span>
+              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Mục tiêu mốc chuẩn:</span>
+              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                {milestone.targetReps ? `${milestone.targetReps} reps` : ''}
+                {milestone.targetDurationSeconds ? ` ${milestone.targetDurationSeconds}s` : ''}
+                {!milestone.targetReps && !milestone.targetDurationSeconds ? 'Tự ghi nhận' : ''}
+              </span>
             </div>
           </div>
 
@@ -205,7 +207,7 @@ export function AttemptRecordModal({
           <EvidencePicker
             selectedSource={selectedSource}
             onSelectSource={setSelectedSource}
-            exerciseId={milestone.exerciseId}
+            exerciseId={milestone.exerciseId} variantId={milestone.variantId} assistance={assistance}
           />
 
           {/* Tải clip đối chiếu (VideoUploadDropzone) */}

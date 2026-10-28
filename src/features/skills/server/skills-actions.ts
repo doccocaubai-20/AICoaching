@@ -262,47 +262,19 @@ export async function recordJourneyAttemptAction(input: RecordAttemptInput): Pro
       };
     }
 
-    // 2. Kiểm tra quyền sở hữu nguồn nền (SourceRef) nếu có gắn kèm
+    // The DB uses the same exact exercise matcher for listing and saving evidence.
     if (input.sourceRef) {
-      const { sourceType, sourceId } = input.sourceRef;
-      if (sourceType === 'activity') {
-        const { data: act, error: actErr } = await supabase
-          .from('activities')
-          .select('id, user_id')
-          .eq('id', sourceId)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (actErr || !act) {
-          return {
-            success: false,
-            message: 'Từ chối gắn chứng cứ: Hoạt động nguồn không tồn tại hoặc bạn không sở hữu bản ghi này.',
-            errorCode: 'FORBIDDEN_OWNERSHIP',
-          };
-        }
-      } else if (sourceType === 'session_result') {
-        const { data: sRes, error: sResErr } = await supabase
-          .from('session_results')
-          .select('id, user_id')
-          .eq('id', sourceId)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (sResErr || !sRes) {
-          return {
-            success: false,
-            message: 'Từ chối gắn chứng cứ: Kết quả buổi tập nguồn không tồn tại hoặc bạn không sở hữu bản ghi này.',
-            errorCode: 'FORBIDDEN_OWNERSHIP',
-          };
-        }
-      }
+      const eligible = await getEligibleEvidenceSourcesAction(input.exerciseId, input.variantId || 'standard', input.assistance || 'bodyweight');
+      const source = eligible.data?.find(item => item.id === input.sourceRef?.sourceId && item.sourceType === input.sourceRef.sourceType);
+      if (!eligible.success || !source) return { success: false, message: 'Nguồn phải là buổi tập đã hoàn thành đúng động tác, biến thể và mức hỗ trợ. Bạn có thể bỏ gắn nguồn để ghi lần thử độc lập.', errorCode: 'INCOMPATIBLE_EVIDENCE' };
+      input = { ...input, sourceRef: { sourceType: source.sourceType, sourceId: source.id, recordedAt: source.date } };
     }
 
     // 3. Kiểm tra video đính kèm (nếu có)
     if (input.videoId) {
       const { data: vid, error: vidErr } = await supabase
         .from('journey_videos')
-        .select('id, user_id, status')
+        .select('id, user_id, status, exercise_id, variant_id')
         .eq('id', input.videoId)
         .eq('user_id', user.id)
         .maybeSingle();
@@ -315,10 +287,10 @@ export async function recordJourneyAttemptAction(input: RecordAttemptInput): Pro
         };
       }
 
-      if (vid.status === 'pending_deletion' || vid.status === 'deleted') {
+      if (vid.status !== 'ready' || vid.exercise_id !== input.exerciseId || vid.variant_id !== (input.variantId || 'standard')) {
         return {
           success: false,
-          message: 'Không thể đính kèm video đã bị đánh dấu xóa.',
+          message: 'Video phải tải xong và đúng động tác, biến thể của lần thử.',
           errorCode: 'VIDEO_UNAVAILABLE',
         };
       }
@@ -526,4 +498,34 @@ export async function getJourneySummary(userId: string): Promise<JourneySummaryD
   } catch {
     return null;
   }
+}
+
+export interface EligibleEvidenceSource {
+  id: string;
+  sourceType: 'activity' | 'session_result';
+  title: string;
+  date: string;
+  details: string;
+}
+
+/**
+ * Lấy danh sách các chứng cứ thực tế (hoạt động / kết quả buổi tập) của người dùng hiện tại (F1)
+ */
+export async function getEligibleEvidenceSourcesAction(
+  exerciseId?: string, variantId = 'standard', assistance = 'bodyweight', runId?: string
+): Promise<ActionResult<EligibleEvidenceSource[]>> {
+  try {
+    await requireAuthenticatedUser();
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) return { success:false, message:'Chưa cấu hình Supabase.' };
+    if (!exerciseId) return { success:true, data:[] };
+    const {data,error} = await (supabase as any).rpc('get_compatible_journey_evidence', {
+      p_exercise_id:exerciseId, p_variant_id:variantId, p_assistance:assistance, p_run_id:runId || null,
+    });
+    if (error) return { success:false, message:'Không thể tải nguồn chứng cứ. Vui lòng thử lại.' };
+    return {success:true,data:(data || []).map((row:any)=>({
+      id:row.source_id,sourceType:row.source_type as 'activity' | 'session_result',title:row.title,date:row.recorded_at,
+      details:'Đã hoàn thành đúng động tác, biến thể và mức hỗ trợ',
+    }))};
+  } catch { return {success:false,message:'Không thể tải nguồn chứng cứ.'}; }
 }

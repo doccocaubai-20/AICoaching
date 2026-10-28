@@ -10,12 +10,14 @@ interface ActivityManagerProps {
   initialActivities: ActivityEntity[];
   isConfigured: boolean;
   fetchError?: string | null;
+  highlightId?: string;
 }
 
 export function ActivityManager({
   initialActivities,
   isConfigured,
   fetchError,
+  highlightId,
 }: ActivityManagerProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
@@ -89,6 +91,7 @@ export function ActivityManager({
           onOpenCreate={handleOpenCreate}
           onEditActivity={handleOpenEdit}
           isConfigured={isConfigured}
+          highlightId={highlightId}
         />
       )}
 

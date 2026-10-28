@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useState } from 'react';
 import { Users, Plus, ShieldCheck, HeartHandshake, Calendar, Sparkles } from 'lucide-react';
 import { GroupEntity, GroupRole } from '@/contracts/group.contract';
@@ -15,9 +16,10 @@ interface GroupItemData {
 
 interface GroupsManagerProps {
   groups: GroupItemData[];
+  workoutDraft?: {runId:string;title:string} | null;
 }
 
-export function GroupsManager({ groups }: GroupsManagerProps) {
+export function GroupsManager({ groups, workoutDraft }: GroupsManagerProps) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   return (
@@ -48,6 +50,11 @@ export function GroupsManager({ groups }: GroupsManagerProps) {
         </div>
       </div>
 
+      {workoutDraft && <div className="p-4 rounded-xl border border-emerald-300 space-y-2 text-sm">
+        <p>Đã hoàn thành: <strong>{workoutDraft.title}</strong>. Chọn nhóm để mở bản nháp cam kết. Chỉ chia sẻ sau khi bạn kiểm tra và bấm lưu.</p>
+        {groups.filter(g=>g.group.status==='active').map(({group})=><Link key={group.id} className="block text-emerald-600 underline" href={`/groups/${group.id}?runId=${workoutDraft.runId}`}>{group.name}: mở bản nháp</Link>)}
+        {!groups.length && <p>Hãy tạo nhóm trước, rồi quay lại bước này.</p>}
+      </div>}
       {/* Action Bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">

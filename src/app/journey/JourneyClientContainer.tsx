@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Target, AlertCircle } from 'lucide-react';
-import type { JourneyDetails, SkillMilestone } from '@/features/skills/contracts/skills.contract';
+import type { JourneyDetails, SkillMilestone, SourceRef } from '@/features/skills/contracts/skills.contract';
 import { JourneyHeader } from '@/features/skills/components/JourneyHeader';
 import { MilestoneCard } from '@/features/skills/components/MilestoneCard';
 import { AttemptRecordModal } from '@/features/skills/components/AttemptRecordModal';
@@ -11,12 +11,14 @@ import { deleteJourneyAttemptAction } from '@/features/skills/server/skills-acti
 
 interface JourneyClientContainerProps {
   initialDetails: JourneyDetails;
+  initialEvidence?: SourceRef | null;
+  initialMilestoneId?: string;
 }
 
-export function JourneyClientContainer({ initialDetails }: JourneyClientContainerProps) {
+export function JourneyClientContainer({ initialDetails, initialEvidence, initialMilestoneId }: JourneyClientContainerProps) {
   const router = useRouter();
-  const [selectedMilestone, setSelectedMilestone] = useState<SkillMilestone | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedMilestone, setSelectedMilestone] = useState<SkillMilestone | null>(initialDetails.milestones.find(m=>m.milestone.id===initialMilestoneId)?.milestone || null);
+  const [isModalOpen, setIsModalOpen] = useState(Boolean(initialMilestoneId));
 
   const { journey, milestones, totalMilestones, achievedMilestonesCount, needsReviewMilestonesCount, attemptedMilestonesCount } = initialDetails;
 
@@ -73,6 +75,8 @@ export function JourneyClientContainer({ initialDetails }: JourneyClientContaine
       {/* Modal ghi nhận lần thử */}
       {selectedMilestone && (
         <AttemptRecordModal
+          key={selectedMilestone.id}
+          initialSource={selectedMilestone.id === initialMilestoneId ? initialEvidence : null}
           milestone={selectedMilestone}
           isOpen={isModalOpen}
           onClose={() => {

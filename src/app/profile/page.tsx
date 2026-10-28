@@ -21,7 +21,17 @@ import {
   ProfileScheduleDay,
 } from '@/contracts';
 
-export default async function ProfilePage() {
+interface ProfilePageProps {
+  searchParams?: Promise<{
+    tab?: string;
+    highlight?: string;
+    date?: string;
+  }>;
+}
+
+export default async function ProfilePage({ searchParams }: ProfilePageProps) {
+  const resolvedParams = searchParams ? await searchParams : {};
+  const initialTab = resolvedParams.tab;
   const envStatus = getSupabaseEnvStatus();
 
   // 1. Trường hợp chưa cấu hình credentials
@@ -51,6 +61,7 @@ export default async function ProfilePage() {
           documents={[]}
           activities={[]}
           isConfigured={false}
+          key={`${initialTab}:${resolvedParams.date}:${resolvedParams.highlight}`} initialTab={initialTab} initialDate={resolvedParams.date} highlightId={resolvedParams.highlight}
         />
       </div>
     );
@@ -87,7 +98,7 @@ export default async function ProfilePage() {
     supabase.from('observations').select('*').eq('user_id', user.id).order('observed_at', { ascending: false }),
     supabase.from('health_profiles').select('*').eq('user_id', user.id).maybeSingle(),
     supabase.from('blood_pressure_readings').select('*').eq('user_id', user.id).order('measured_at', { ascending: false }),
-    supabase.from('daily_checkins').select('*').eq('user_id', user.id).order('local_date', { ascending: false }).limit(30),
+    supabase.from('daily_checkins').select('*').eq('user_id', user.id).order('local_date', { ascending: false }),
     supabase.from('health_conditions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     supabase.from('allergies').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     supabase.from('medications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -145,6 +156,7 @@ export default async function ProfilePage() {
         activities={(activitiesRes.data as ActivityEntity[]) || []}
         activitiesError={activitiesRes.error ? `Không tải được hoạt động: ${activitiesRes.error.message}` : null}
         isConfigured={true}
+        key={`${initialTab}:${resolvedParams.date}:${resolvedParams.highlight}`} initialTab={initialTab} initialDate={resolvedParams.date} highlightId={resolvedParams.highlight}
       />
     </div>
   );

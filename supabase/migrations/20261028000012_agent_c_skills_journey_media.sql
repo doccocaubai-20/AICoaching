@@ -105,12 +105,44 @@ CREATE POLICY "journey_videos_select_own" ON public.journey_videos
 
 CREATE POLICY "journey_videos_insert_own" ON public.journey_videos
     FOR INSERT TO authenticated
-    WITH CHECK (auth.uid() = user_id);
+    WITH CHECK (
+      auth.uid() = user_id
+      AND status = 'reserved'
+      AND file_size_bytes > 0
+      AND file_size_bytes <= 20971520
+    );
 
 CREATE POLICY "journey_videos_update_own" ON public.journey_videos
     FOR UPDATE TO authenticated
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.protect_journey_video_metadata()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  -- Cho phép cập nhật qua các RPC quản lý video (finalize, mark deletion, cleanup)
+  IF current_setting('app.allow_video_metadata_mutation', true) = 'true' THEN
+    RETURN NEW;
+  END IF;
+
+  IF auth.uid() IS NOT NULL THEN
+    IF NEW.id != OLD.id OR NEW.user_id != OLD.user_id OR NEW.file_size_bytes != OLD.file_size_bytes OR NEW.storage_path != OLD.storage_path OR NEW.status != OLD.status THEN
+      RAISE EXCEPTION 'Không được phép thay đổi thông tin hạn mức dung lượng hoặc trạng thái video trực tiếp' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_protect_journey_video_metadata ON public.journey_videos;
+CREATE TRIGGER trg_protect_journey_video_metadata
+BEFORE UPDATE ON public.journey_videos
+FOR EACH ROW
+EXECUTE FUNCTION public.protect_journey_video_metadata();
 
 CREATE POLICY "journey_videos_delete_own" ON public.journey_videos
     FOR DELETE TO authenticated
@@ -321,6 +353,8 @@ BEGIN
         RAISE EXCEPTION 'Unsupported video MIME type' USING ERRCODE = '22023';
     END IF;
 
+    PERFORM set_config('app.allow_video_metadata_mutation', 'true', true);
+
     UPDATE public.journey_videos
     SET status = 'ready',
         file_size_bytes = p_actual_size_bytes,
@@ -355,6 +389,8 @@ BEGIN
     IF v_storage_path IS NULL THEN
         RAISE EXCEPTION 'Video not found or not owned by user' USING ERRCODE = 'P0002';
     END IF;
+
+    PERFORM set_config('app.allow_video_metadata_mutation', 'true', true);
 
     -- Chuyển trạng thái sang pending_deletion ngay lập tức để chặn cấp URL mới
     UPDATE public.journey_videos
@@ -391,6 +427,8 @@ BEGIN
         RAISE EXCEPTION 'Authentication required' USING ERRCODE = '42501';
     END IF;
 
+    PERFORM set_config('app.allow_video_metadata_mutation', 'true', true);
+
     IF p_success THEN
         UPDATE public.journey_videos
         SET status = 'deleted',
@@ -418,6 +456,8 @@ AS $$
 DECLARE
     v_count INTEGER;
 BEGIN
+    PERFORM set_config('app.allow_video_metadata_mutation', 'true', true);
+
     UPDATE public.journey_videos
     SET status = 'deleted',
         updated_at = now()
@@ -521,7 +561,17 @@ BEGIN
 
         CREATE POLICY "comparison_videos_owner_insert" ON storage.objects
             FOR INSERT TO authenticated
-            WITH CHECK (bucket_id = 'comparison_videos' AND auth.uid()::TEXT = (storage.foldername(name))[1]);
+            WITH CHECK (
+                bucket_id = 'comparison_videos'
+                AND auth.uid()::TEXT = (storage.foldername(name))[1]
+                AND EXISTS (
+                    SELECT 1 FROM public.journey_videos
+                    WHERE user_id = auth.uid()
+                      AND storage_path = name
+                      AND status = 'reserved'
+                      AND expires_at > now()
+                )
+            );
 
         CREATE POLICY "comparison_videos_owner_update" ON storage.objects
             FOR UPDATE TO authenticated

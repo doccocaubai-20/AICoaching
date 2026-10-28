@@ -112,6 +112,26 @@ export function getLocalDateStartInstant(
 }
 
 /**
+ * Convert a local calendar date to its UTC end instant (23:59:59.999 local) for database timestamp filters.
+ */
+export function getLocalDateEndInstant(
+  localDate: string,
+  timezone: string = DEFAULT_APP_TIMEZONE
+): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);
+  if (!match) return new Date(NaN);
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const nextDay = new Date(Date.UTC(year, month - 1, day + 1));
+  const pad = (v: number) => String(v).padStart(2, '0');
+  const nextLocalDateStr = `${nextDay.getUTCFullYear()}-${pad(nextDay.getUTCMonth() + 1)}-${pad(nextDay.getUTCDate())}`;
+  const nextDayStart = getLocalDateStartInstant(nextLocalDateStr, timezone);
+  return new Date(nextDayStart.getTime() - 1);
+}
+
+/**
  * Lấy cửa sổ 7 ngày chuẩn xác: [hôm nay - 6 ngày, hôm nay] theo múi giờ chỉ định.
  */
 export function get7DayWindow(

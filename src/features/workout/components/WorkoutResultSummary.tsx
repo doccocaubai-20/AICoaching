@@ -12,7 +12,7 @@ interface WorkoutResultSummaryProps {
 }
 
 export function WorkoutResultSummary({ run, sets }: WorkoutResultSummaryProps) {
-  const completedSets = sets.filter((s) => s.status === 'completed' && s.actual_reps !== null && s.actual_reps > 0);
+  const completedSets = sets.filter((s) => s.status === 'completed' && ((s.actual_reps ?? 0) > 0 || (s.actual_duration_seconds ?? 0) > 0));
   const skippedSets = sets.filter((s) => s.status === 'skipped');
   const totalSets = sets.length;
 
@@ -21,13 +21,13 @@ export function WorkoutResultSummary({ run, sets }: WorkoutResultSummaryProps) {
     : 1;
 
   // Nhóm các bài tập
-  const grouped: Record<string, { completed: number[]; skipped: number }> = {};
+  const grouped: Record<string, { completed: string[]; skipped: number }> = {};
   for (const s of sets) {
     if (!grouped[s.exercise_name]) {
       grouped[s.exercise_name] = { completed: [], skipped: 0 };
     }
-    if (s.status === 'completed' && s.actual_reps !== null) {
-      grouped[s.exercise_name].completed.push(s.actual_reps);
+    if (s.status === 'completed' && ((s.actual_reps ?? 0)>0 || (s.actual_duration_seconds ?? 0)>0)) {
+      grouped[s.exercise_name].completed.push(s.actual_unit === 'seconds' ? `${s.actual_duration_seconds ?? 0} giây` : `${s.actual_reps ?? 0} reps`);
     } else if (s.status === 'skipped') {
       grouped[s.exercise_name].skipped += 1;
     }
@@ -105,7 +105,7 @@ export function WorkoutResultSummary({ run, sets }: WorkoutResultSummaryProps) {
                 <span className="font-medium text-white">{name}</span>
                 <div className="text-slate-400 text-[11px] mt-0.5">
                   {data.completed.length > 0 ? (
-                    <span>Thực tế: {data.completed.join(' - ')} reps</span>
+                    <span>Thực tế: {data.completed.join(' - ')}</span>
                   ) : (
                     <span className="text-slate-500">Chưa hoàn thành hiệp nào</span>
                   )}
@@ -138,8 +138,9 @@ export function WorkoutResultSummary({ run, sets }: WorkoutResultSummaryProps) {
         </p>
 
         <div className="space-y-2 pt-1">
+          {/* F4: Mang ngữ cảnh run/result sang Nhật ký, Hành trình kỹ năng và Cam kết nhóm */}
           <Link
-            href="/activities"
+            href={`/activities?runId=${run.id}`}
             className="flex items-center justify-between p-3 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/50 transition group"
           >
             <div className="flex items-center gap-2.5">
@@ -150,23 +151,23 @@ export function WorkoutResultSummary({ run, sets }: WorkoutResultSummaryProps) {
           </Link>
 
           <Link
-            href="/programs#skill-tree"
+            href={`/journey?runId=${run.id}`}
             className="flex items-center justify-between p-3 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/50 transition group"
           >
             <div className="flex items-center gap-2.5">
               <Award className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-medium">2. Gắn lần thử vào Cây Kỹ Năng (Skill Tree)</span>
+              <span className="text-xs font-medium">2. Gắn kết quả vào Hành Trình Kỹ Năng (Journey)</span>
             </div>
             <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition" />
           </Link>
 
           <Link
-            href="/profile#goals"
+            href={`/groups?runId=${run.id}`}
             className="flex items-center justify-between p-3 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/50 transition group"
           >
             <div className="flex items-center gap-2.5">
               <Target className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs font-medium">3. Cập nhật cam kết rèn luyện</span>
+              <span className="text-xs font-medium">3. Mở nháp cam kết nhóm rèn luyện (xác nhận trước khi gửi)</span>
             </div>
             <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition" />
           </Link>

@@ -107,8 +107,35 @@ CREATE POLICY "group_members_select_active_peers" ON public.group_members
 
 CREATE POLICY "group_members_update_self_mute" ON public.group_members
     FOR UPDATE TO authenticated
-    USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
+    USING (auth.uid() = user_id AND status = 'active')
+    WITH CHECK (auth.uid() = user_id AND status = 'active');
+
+CREATE OR REPLACE FUNCTION public.protect_group_member_fields()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  -- Cho phép cập nhật qua các RPC quản trị được kiểm soát
+  IF current_setting('app.allow_group_member_mutation', true) = 'true' THEN
+    RETURN NEW;
+  END IF;
+
+  IF auth.uid() IS NOT NULL THEN
+    IF NEW.id != OLD.id OR NEW.group_id != OLD.group_id OR NEW.user_id != OLD.user_id OR NEW.role != OLD.role OR NEW.status != OLD.status OR NEW.joined_at != OLD.joined_at THEN
+      RAISE EXCEPTION 'Chỉ được phép cập nhật cài đặt thông báo (is_muted), không được sửa thông tin thành viên trực tiếp' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_protect_group_member_fields ON public.group_members;
+CREATE TRIGGER trg_protect_group_member_fields
+BEFORE UPDATE ON public.group_members
+FOR EACH ROW
+EXECUTE FUNCTION public.protect_group_member_fields();
 
 -- ------------------------------------------------------------------------------
 -- 4. RÀNG BUỘC SỨC CHỨA TỐI ĐA 5 THÀNH VIÊN VÀ CHỐNG TỰ NÂNG ROLE
@@ -156,7 +183,7 @@ BEGIN
       RAISE EXCEPTION 'Thành viên không được phép tự nâng quyền' USING ERRCODE = '42501';
     END IF;
     -- Non-owner không được phép thay đổi role của owner
-    IF auth.uid() IS NOT NULL AND OLD.role = 'owner' AND public.get_group_member_role(OLD.group_id, auth.uid()) != 'owner' THEN
+    IF auth.uid() IS NOT NULL AND OLD.role = 'owner' AND COALESCE(public.get_group_member_role(OLD.group_id, auth.uid()), '') != 'owner' THEN
       RAISE EXCEPTION 'Chỉ chủ nhóm mới có thể chuyển giao hoặc thay đổi quyền chủ nhóm' USING ERRCODE = '42501';
     END IF;
   END IF;
@@ -521,7 +548,7 @@ BEGIN
   END IF;
 
   v_role := public.get_group_member_role(p_group_id, v_user_id);
-  IF v_role NOT IN ('owner', 'admin') THEN
+  IF v_role IS NULL OR v_role NOT IN ('owner', 'admin') THEN
     RAISE EXCEPTION 'Chỉ chủ nhóm hoặc quản trị viên mới có quyền tạo lời mời' USING ERRCODE = '42501';
   END IF;
 
@@ -692,6 +719,7 @@ BEGIN
   WHERE group_id = v_group_id AND user_id = v_user_id;
 
   IF FOUND THEN
+    PERFORM set_config('app.allow_group_member_mutation', 'true', true);
     UPDATE public.group_members
     SET status = 'active', role = 'member', joined_at = now(), left_at = NULL
     WHERE id = v_existing_member.id;
@@ -750,6 +778,7 @@ BEGIN
     END IF;
   END IF;
 
+  PERFORM set_config('app.allow_group_member_mutation', 'true', true);
   UPDATE public.group_members
   SET status = 'left', left_at = now()
   WHERE group_id = p_group_id AND user_id = v_user_id;
@@ -780,7 +809,7 @@ BEGIN
   END IF;
 
   v_current_role := public.get_group_member_role(p_group_id, v_user_id);
-  IF v_current_role != 'owner' THEN
+  IF v_current_role IS NULL OR v_current_role != 'owner' THEN
     RAISE EXCEPTION 'Chỉ chủ nhóm hiện tại mới có quyền chuyển giao quyền sở hữu nhóm' USING ERRCODE = '42501';
   END IF;
 
@@ -791,6 +820,8 @@ BEGIN
   IF v_user_id = p_new_owner_id THEN
     RETURN TRUE;
   END IF;
+
+  PERFORM set_config('app.allow_group_member_mutation', 'true', true);
 
   UPDATE public.group_members
   SET role = 'admin'
@@ -822,7 +853,7 @@ BEGIN
   END IF;
 
   v_current_role := public.get_group_member_role(p_group_id, v_user_id);
-  IF v_current_role != 'owner' THEN
+  IF v_current_role IS NULL OR v_current_role != 'owner' THEN
     RAISE EXCEPTION 'Chỉ chủ nhóm mới có quyền giải tán/lưu trữ nhóm' USING ERRCODE = '42501';
   END IF;
 

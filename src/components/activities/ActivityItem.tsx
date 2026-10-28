@@ -20,9 +20,10 @@ interface ActivityItemProps {
   activity: ActivityEntity;
   onEdit: (activity: ActivityEntity) => void;
   isConfigured: boolean;
+  isHighlighted?: boolean;
 }
 
-export function ActivityItem({ activity, onEdit, isConfigured }: ActivityItemProps) {
+export function ActivityItem({ activity, onEdit, isConfigured, isHighlighted }: ActivityItemProps) {
   const [isDeleting, startDeleteTransition] = useTransition();
 
   const handleDelete = () => {
@@ -44,7 +45,10 @@ export function ActivityItem({ activity, onEdit, isConfigured }: ActivityItemPro
 
   return (
     <div
+      id={`activity-${activity.id}`}
       className={`p-3.5 sm:p-4 rounded-2xl border transition-all ${
+        isHighlighted ? 'ring-2 ring-emerald-500 shadow-md ' : ''
+      }${
         activity.is_planned
           ? 'bg-blue-50/40 dark:bg-blue-950/20 border-blue-200/70 dark:border-blue-900/40'
           : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'

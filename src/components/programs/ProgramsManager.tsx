@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ProgramEntity,
   SessionEntity,
@@ -15,7 +16,8 @@ import { LiveWorkoutModal } from './LiveWorkoutModal';
 import { SkillTreeSection } from './SkillTreeSection';
 import { SessionHistoryList } from './SessionHistoryList';
 import { ReviewSuggestionsSection } from '@/components/review/ReviewSuggestionsSection';
-import { AlertCircle, CalendarCheck2, Target, ArrowRight, Video } from 'lucide-react';
+import { AlertCircle, CalendarCheck2, Target, ArrowRight, Video, Loader2 } from 'lucide-react';
+import { startWorkoutRunAction } from '@/features/workout';
 import { recordSessionResultAction } from '@/app/programs/actions';
 
 interface ProgramsManagerProps {
@@ -41,11 +43,12 @@ export function ProgramsManager({
   resultsError,
   suggestionsError,
 }: ProgramsManagerProps) {
+  const router = useRouter();
   const [selectedSession, setSelectedSession] = useState<SessionEntity | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [liveSession, setLiveSession] = useState<SessionEntity | null>(null);
-  // [E10] Khóa idempotency ổn định cho một lượt tập (tái sử dụng khi retry)
   const [liveIdempotencyKey, setLiveIdempotencyKey] = useState<string>(() => crypto.randomUUID());
+  const [isStartingLive, setIsStartingLive] = useState(false);
 
   const handleOpenRecord = (session: SessionEntity) => {
     setSelectedSession(session);
@@ -57,9 +60,25 @@ export function ProgramsManager({
     setSelectedSession(null);
   };
 
-  const handleStartLive = (session: SessionEntity) => {
-    setLiveSession(session);
-    setLiveIdempotencyKey(crypto.randomUUID());
+  // F3: Nút tập chính khởi tạo run của /workout, thống nhất entry và finalization
+  const handleStartLive = async (session: SessionEntity) => {
+    try {
+      setIsStartingLive(true);
+      const res = await startWorkoutRunAction({
+        sessionId: session.id,
+        sessionTitle: session.title,
+      });
+
+      if (res.success && res.data?.runId) {
+        router.push(`/workout/${res.data.runId}`);
+        return;
+      }
+    } catch (err) {
+      console.error('Lỗi khi khởi động workout run:', err);
+    } finally {
+      setIsStartingLive(false);
+    }
+    router.push(`/workout?sessionId=${session.id}`);
   };
 
   const handleFinishLiveWorkout = async (data: {
@@ -76,13 +95,11 @@ export function ProgramsManager({
     formData.append('duration_minutes', String(data.durationMinutes));
     formData.append('perceived_exertion', String(data.perceivedExertion));
     formData.append('notes', data.notes);
-    // [E10] Dùng chung idempotency_key qua các lần gọi lại của cùng lượt tập
     formData.append('idempotency_key', data.idempotencyKey || liveIdempotencyKey);
     formData.append('completed_exercises', JSON.stringify(data.completedExercises));
 
     const res = await recordSessionResultAction(null, formData);
     if (res?.success) {
-      // Chỉ sinh khóa mới khi đã ghi nhận thành công
       setLiveIdempotencyKey(crypto.randomUUID());
     }
     return res;
@@ -196,7 +213,7 @@ export function ProgramsManager({
         isConfigured={isConfigured}
       />
 
-      {/* 6. Live Workout Companion Modal (Trực Tiếp Có Bấm Giờ Nghỉ & Âm Thanh) */}
+      {/* 6. Live Workout Companion Modal (Fallback khi có liveSession) */}
       {liveSession && (
         <LiveWorkoutModal
           session={liveSession}

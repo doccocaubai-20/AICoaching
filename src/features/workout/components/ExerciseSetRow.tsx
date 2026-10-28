@@ -11,6 +11,7 @@ interface ExerciseSetRowProps {
   onSaveSet: (data: {
     actualReps: number | null;
     actualLoad: number | null;
+    actualDurationSeconds?: number | null;
     status: 'completed' | 'skipped' | 'pending';
   }) => void;
   disabled?: boolean;
@@ -23,8 +24,10 @@ export function ExerciseSetRow({
   onSaveSet,
   disabled = false,
 }: ExerciseSetRowProps) {
+  const isTimed=set.target_unit === 'seconds';
+  const actualValue=isTimed ? set.actual_duration_seconds : set.actual_reps;
   const [repsInput, setRepsInput] = useState<string>(() => {
-    return set.actual_reps !== null && set.actual_reps !== undefined ? String(set.actual_reps) : '';
+    return actualValue != null ? String(actualValue) : '';
   });
   const [loadInput, setLoadInput] = useState<string>(() => {
     return set.actual_load !== null && set.actual_load !== undefined ? String(set.actual_load) : '';
@@ -32,20 +35,19 @@ export function ExerciseSetRow({
 
   // Đồng bộ khi set từ props thay đổi (ví dụ khi người dùng sao chép lần trước)
   useEffect(() => {
-    if (set.actual_reps !== null && set.actual_reps !== undefined) {
-      setRepsInput(String(set.actual_reps));
-    }
+    setRepsInput(actualValue != null ? String(actualValue) : '');
     if (set.actual_load !== null && set.actual_load !== undefined) {
       setLoadInput(String(set.actual_load));
     }
-  }, [set.actual_reps, set.actual_load]);
+  }, [actualValue, set.actual_load]);
 
   const handleSave = () => {
     const parsedReps = repsInput.trim() !== '' ? parseInt(repsInput, 10) : null;
     const parsedLoad = loadInput.trim() !== '' ? parseFloat(loadInput) : null;
 
     onSaveSet({
-      actualReps: Number.isFinite(parsedReps) ? parsedReps : null,
+      actualReps: !isTimed && Number.isFinite(parsedReps) ? parsedReps : null,
+      actualDurationSeconds: isTimed && Number.isFinite(parsedReps) ? parsedReps : null,
       actualLoad: Number.isFinite(parsedLoad) ? parsedLoad : null,
       status: 'completed',
     });
@@ -109,13 +111,13 @@ export function ExerciseSetRow({
                 type="number"
                 min="0"
                 max="1000"
-                placeholder="Reps"
+                placeholder={isTimed ? "Giây" : "Reps"}
                 value={repsInput}
                 onChange={(e) => setRepsInput(e.target.value)}
                 disabled={disabled || syncState === 'pending'}
                 className="w-16 px-2 py-1.5 text-center text-sm font-semibold rounded-lg bg-slate-950 border border-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-white placeholder-slate-600 disabled:opacity-50"
               />
-              <span className="text-xs text-slate-400">reps</span>
+              <span className="text-xs text-slate-400">{isTimed ? "giây" : "reps"}</span>
             </div>
           )}
 
@@ -124,7 +126,7 @@ export function ExerciseSetRow({
             <button
               type="button"
               onClick={handleSave}
-              disabled={disabled || syncState === 'pending' || !repsInput.trim()}
+              disabled={disabled || syncState === 'pending' || !(Number(repsInput)>0)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
                 isCompleted
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white'

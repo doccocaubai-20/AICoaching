@@ -70,6 +70,14 @@ export interface WorkoutSetEntity {
   updated_at: string;
 }
 
+/** Missing actual values depend on the exercise unit; skipped sets remain intentionally skipped. */
+export function hasWorkoutSetActual(set: Pick<WorkoutSetEntity,'actual_unit'|'actual_reps'|'actual_duration_seconds'>): boolean {
+  return set.actual_unit === 'seconds' ? (set.actual_duration_seconds ?? 0)>0 : (set.actual_reps ?? 0)>0;
+}
+export function isWorkoutSetIncomplete(set: Pick<WorkoutSetEntity,'status'|'actual_unit'|'actual_reps'|'actual_duration_seconds'>): boolean {
+  return set.status === 'pending' || (set.status === 'completed' && !hasWorkoutSetActual(set));
+}
+
 export interface PreviousExerciseComparison {
   hasComparison: boolean;
   reason?: 'no_previous_record' | 'unmapped_variant' | 'unit_mismatch' | 'demo_program_data_excluded';
@@ -251,7 +259,7 @@ export function compareExerciseRecords(
   }
 
   // Lọc các hiệp có giá trị thật
-  const validSets = candidate.sets.filter((s) => s.actual_reps !== null && s.actual_reps > 0);
+  const validSets = candidate.sets.filter((s) => targetUnit === 'seconds' ? (s.actual_duration_seconds ?? 0)>0 : (s.actual_reps ?? 0)>0);
   if (validSets.length === 0) {
     return {
       hasComparison: false,
@@ -259,7 +267,7 @@ export function compareExerciseRecords(
     };
   }
 
-  const repsSummary = validSets.map((s) => s.actual_reps).join('-');
+  const repsSummary = validSets.map((s) => targetUnit === 'seconds' ? s.actual_duration_seconds : s.actual_reps).join('-');
   const summaryText = `${validSets.length} hiệp x ${repsSummary} ${targetUnit}`;
 
   return {

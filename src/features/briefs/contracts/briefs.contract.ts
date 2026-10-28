@@ -7,11 +7,13 @@ export interface SourceRef {
   sourceId: string;
   fingerprint: string; // SHA-256 hash của updated_at để nhận diện stale
   recordedAt: string;
+  sourceUpdatedAt?: string;
   summaryLabel?: string;
 }
 
 // Cấu trúc Snapshot bất biến lưu trong DB
 export interface BriefSnapshotPayload {
+  confirmationToken?: string;
   meta: {
     briefType: BriefType;
     title: string;

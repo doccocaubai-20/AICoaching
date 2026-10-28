@@ -83,9 +83,12 @@ export async function startWorkoutRunAction(params: {
     if (!exercisesSnapshot || exercisesSnapshot.length === 0) {
       exercisesSnapshot = [
         { name: 'Hít đất tiêu chuẩn (Push-up)', sets: 3, target_reps: '8-12', rest_seconds: 60, note: 'Khởi đầu' },
-        { name: 'Treo xà đơn (Dead hang)', sets: 3, target_reps: '20-30s', rest_seconds: 60, note: 'Tăng lực bám' },
+        { name: 'Treo xà đơn (Dead hang)', variant:'active_grip', assistance:'bodyweight', unit:'seconds', target_duration_seconds:20, sets: 3, target_reps: '20-30s', rest_seconds: 60, note: 'Giữ vai kích hoạt, không đung đưa' },
       ];
     }
+
+    // Legacy content with an explicit seconds suffix remains a timed exercise.
+    exercisesSnapshot=exercisesSnapshot.map(ex=>({...ex,unit:ex.unit || (/^\d+(?:-\d+)?\s*s$/i.test(ex.target_reps || '') ? 'seconds' : 'reps')}));
 
     // 3. Tạo workout_run mới với snapshot bài tập bất biến
     const idempotencyKey = params.idempotencyKey || `run_${user.id}_${Date.now()}`;

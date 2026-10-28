@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HeartPulse, PlusCircle, Trash2, TrendingUp, AlertCircle, Edit3 } from 'lucide-react';
 import { ObservationEntity, BloodPressureEntity, MetricType, ObservationSource } from '@/contracts';
 import { deleteObservationAction } from '@/app/profile/actions';
@@ -16,12 +16,15 @@ import { toLocalDatetimeInputValue } from '@/lib/date-utils';
 
 interface VitalsTabProps {
   observations: ObservationEntity[];
+  highlightId?: string;
   bloodPressures: BloodPressureEntity[];
 }
 
-export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
+export function VitalsTab({ observations, bloodPressures, highlightId }: VitalsTabProps) {
   // Tabs trong màn hình Chỉ số: 'input' | 'chart' | 'history'
-  const [activeSubTab, setActiveSubTab] = useState<'input' | 'chart' | 'history'>('input');
+  const [activeSubTab, setActiveSubTab] = useState<'input' | 'chart' | 'history'>(highlightId ? 'history' : 'input');
+
+  useEffect(()=>{ if(highlightId && activeSubTab==='history') document.getElementById(`observation-${highlightId}`)?.scrollIntoView({block:'center',behavior:'smooth'}); },[highlightId,activeSubTab]);
 
   // State nhập chỉ số đơn (weight, height, waist, heart rate)
   const [metricType, setMetricType] = useState<MetricType>('weight');
@@ -684,7 +687,7 @@ export function VitalsTab({ observations, bloodPressures }: VitalsTabProps) {
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {observations.map((o) => (
-                        <tr key={o.id} className="hover:bg-slate-50/50">
+                        <tr key={o.id} id={`observation-${o.id}`} className={o.id===highlightId ? "bg-emerald-50 dark:bg-emerald-950 ring-2 ring-emerald-500" : "hover:bg-slate-50/50"}>
                           <td className="p-2 text-slate-500">
                             {new Date(o.observed_at).toLocaleDateString('vi-VN')}
                           </td>

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Dumbbell, LogOut, ShieldCheck, User } from 'lucide-react';
 
@@ -10,6 +11,8 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({ userDisplayName, isLoggedIn = false }: AppHeaderProps) {
+  const pathname=usePathname();
+  if (pathname.startsWith('/shared/')) return null;
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between">
       <Link href="/" className="flex items-center gap-2">

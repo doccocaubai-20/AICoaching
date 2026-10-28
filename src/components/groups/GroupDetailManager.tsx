@@ -26,9 +26,11 @@ import { WeeklyCommitmentsSection } from './WeeklyCommitmentsSection';
 import { GroupMeetupsSection } from './GroupMeetupsSection';
 import { GroupMembersSection } from './GroupMembersSection';
 import { InviteMemberModal } from './InviteMemberModal';
+import { CommitmentFormModal } from './CommitmentFormModal';
 
 interface GroupDetailManagerProps {
   group: GroupEntity;
+  workoutDraft?: {runId:string;title:string;content:string;notes:string} | null;
   currentUserId: string;
   members: GroupMemberEntity[];
   userRole?: GroupRole;
@@ -39,7 +41,7 @@ interface GroupDetailManagerProps {
 }
 
 export function GroupDetailManager({
-  group,
+  group, workoutDraft,
   currentUserId,
   members,
   userRole,
@@ -57,6 +59,7 @@ export function GroupDetailManager({
       : 'commitments'
   );
 
+  const [draftOpen,setDraftOpen]=useState(Boolean(workoutDraft));
   const [isInviteOpen, setIsInviteOpen] = useState(false);
 
   const roleStyle = userRole ? getRoleBadgeStyle(userRole) : null;
@@ -65,6 +68,8 @@ export function GroupDetailManager({
 
   return (
     <div className="space-y-4">
+      {workoutDraft && <CommitmentFormModal isOpen={draftOpen} onClose={()=>setDraftOpen(false)} groupId={group.id} weekStart={initialWeekStart}
+        existingCommitment={commitments.find(c=>c.user_id===currentUserId && c.week_start===initialWeekStart)} initialDraft={workoutDraft} />}
       {/* Top Navigation */}
       <div className="flex items-center justify-between">
         <Link

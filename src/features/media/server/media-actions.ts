@@ -123,6 +123,9 @@ export async function reserveVideoUploadAction(
       };
     }
 
+    // Retry physical cleanup before requesting more capacity; quota remains held if it fails.
+    await cleanupExpiredVideoReservationsAction();
+
     // 2. Tạo đường dẫn ngẫu nhiên an toàn: <user_id>/<uuid>.<ext>
     const safeExt = input.fileType === 'video/webm' ? 'webm' : 'mp4';
     const randomFileName = `${crypto.randomUUID()}.${safeExt}`;
@@ -137,7 +140,7 @@ export async function reserveVideoUploadAction(
         p_variant_id: input.variantId.trim(),
         p_file_name: input.fileName.trim(),
         p_file_type: input.fileType,
-        p_file_size_bytes: input.fileSizeBytes,
+        p_file_size_bytes: MAX_VIDEO_FILE_BYTES,
         p_storage_path: storagePath,
         p_client_duration: input.clientEstimatedDurationSeconds || null,
       } as any
@@ -148,16 +151,20 @@ export async function reserveVideoUploadAction(
       return {
         success: false,
         message: isQuotaExceeded
-          ? 'Vượt quá hạn mức lưu trữ video (tối đa 100 MiB). Vui lòng dọn dẹp các clip cũ trước khi tải thêm.'
+          ? 'Vượt quá hạn mức lưu trữ video (tối đa 100 MiB). Hãy xóa clip cũ hoặc chờ lượt giữ chỗ tải lên hết hạn (tối đa 130 phút).'
           : 'Không thể khởi tạo lượt tải lên: ' + rpcError.message,
         errorCode: isQuotaExceeded ? 'QUOTA_EXCEEDED' : rpcError.code,
       };
     }
 
+    const {data:reserved,error:reservationError}=await supabase.from('journey_videos').select('*').eq('id',reservationId as string).eq('user_id',user.id).single();
+    if(reservationError || !reserved || reserved.status!=='reserved' || reserved.file_size_bytes!==MAX_VIDEO_FILE_BYTES || reserved.exercise_id!==input.exerciseId.trim() || reserved.variant_id!==input.variantId.trim() || reserved.file_type!==input.fileType || reserved.file_name!==input.fileName.trim()) {
+      return {success:false,errorCode:'RESERVATION_CONFLICT',message:'Lượt tải đã hoàn tất hoặc thông tin tải lên đã thay đổi. Vui lòng chọn lại tệp.'};
+    }
     // 4. Cấp Signed Upload URL cho client tải trực tiếp vào Storage (không đi qua Server Action)
     const { data: uploadData, error: uploadErr } = await adminClient.storage
       .from('comparison_videos')
-      .createSignedUploadUrl(storagePath);
+      .createSignedUploadUrl(reserved.storage_path);
 
     if (uploadErr || !uploadData) {
       return {
@@ -167,13 +174,13 @@ export async function reserveVideoUploadAction(
       };
     }
 
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const expiresAt = reserved.expires_at;
 
     return {
       success: true,
       data: {
         reservationId: reservationId as string,
-        storagePath,
+        storagePath: reserved.storage_path,
         uploadUrl: uploadData.signedUrl,
         token: uploadData.token,
         maxBytes: MAX_VIDEO_FILE_BYTES,
@@ -255,11 +262,13 @@ export async function finalizeVideoUploadAction(
       };
     }
 
-    // 3. Gọi RPC finalize để cập nhật trạng thái sang 'ready'
-    const actualBytes = Math.min(input.actualSizeBytes || videoRecord.file_size_bytes, MAX_VIDEO_FILE_BYTES);
-    const actualMime = ALLOWED_VIDEO_MIME_TYPES.includes(input.actualMimeType as any)
-      ? input.actualMimeType
-      : videoRecord.file_type;
+    // Read authoritative Storage metadata; never trust the browser's size/MIME.
+    const object = listData?.find(f=>f.name===fileName);
+    const actualBytes=Number(object?.metadata?.size);
+    const actualMime=String(object?.metadata?.mimetype || object?.metadata?.contentType || '');
+    if (!Number.isSafeInteger(actualBytes) || actualBytes<1 || actualBytes>MAX_VIDEO_FILE_BYTES || actualBytes>videoRecord.file_size_bytes || !ALLOWED_VIDEO_MIME_TYPES.includes(actualMime as typeof ALLOWED_VIDEO_MIME_TYPES[number])) {
+      return {success:false,errorCode:'INVALID_STORED_OBJECT',message:'Tệp thực tế không khớp dung lượng hoặc định dạng được cho phép.'};
+    }
 
     const { error: finalizeErr } = await supabase.rpc('finalize_journey_video_upload', {
       p_video_id: input.reservationId,
@@ -419,12 +428,13 @@ export async function deleteComparisonVideoAction(videoId: string): Promise<Acti
       .remove([pathToDelete]);
 
     // 3. Cập nhật kết quả xóa vào DB (hỗ trợ retry nếu lỗi Storage)
-    await supabase.rpc('confirm_journey_video_deleted', {
+    const {error:confirmError}=await supabase.rpc('confirm_journey_video_deleted', {
       p_video_id: videoId,
       p_success: !removeErr,
       p_error_message: removeErr ? removeErr.message : null,
     } as any);
 
+    if (confirmError) return {success:false,message:'Video đang chờ dọn dẹp. Vui lòng thử xóa lại.',errorCode:'DELETE_PENDING'};
     if (removeErr) {
       // Storage xóa lỗi nhưng tombstone đã được đặt -> người dùng không còn thấy video nữa, retry job sẽ dọn sau
       return {
@@ -548,22 +558,20 @@ export async function removeVideoTimestampNoteAction(
 }
 
 /**
- * Dọn dẹp các lượt giữ chỗ upload bị bỏ dở hoặc quá hạn 15 phút
+ * Dọn dẹp các lượt giữ chỗ upload bị bỏ dở hoặc hết thời hạn tải lên
  * Có thể gọi từ môi trường local / test runner mà không cần cloud cron
  */
 export async function cleanupExpiredVideoReservationsAction(): Promise<ActionResult<{ cleanedCount: number }>> {
   try {
-    const supabase = await getMediaServerClient();
-    if (!supabase) return { success: false, message: 'Chưa cấu hình Supabase.' };
-
-    const { data: count, error } = await supabase.rpc('cleanup_expired_journey_video_reservations');
-    if (error) {
-      return { success: false, message: 'Không thể dọn dẹp reservation quá hạn: ' + error.message };
-    }
-
-    return { success: true, data: { cleanedCount: count || 0 } };
-  } catch (err: any) {
-    return { success: false, message: 'Lỗi máy chủ khi dọn dẹp reservation: ' + (err?.message || String(err)) };
-  }
+    const {user}=await requireAuthenticatedUser();
+    const supabase=await getMediaServerClient();
+    if(!supabase) return {success:false,message:'Chưa cấu hình Supabase.'};
+    const {error}=await supabase.rpc('cleanup_expired_journey_video_reservations');
+    if(error) return {success:false,message:'Không thể đánh dấu lượt tải hết hạn.'};
+    const {data:rows,error:readError}=await supabase.from('journey_videos').select('id').eq('user_id',user.id).eq('status','pending_deletion').lt('expires_at',new Date().toISOString()).limit(20);
+    if(readError) return {success:false,message:'Không thể tải danh sách dọn dẹp.'};
+    let cleanedCount=0;
+    for(const row of rows||[]) if((await deleteComparisonVideoAction(row.id)).success) cleanedCount++;
+    return {success:true,data:{cleanedCount}};
+  } catch { return {success:false,message:'Không thể dọn dẹp video lúc này.'}; }
 }
-

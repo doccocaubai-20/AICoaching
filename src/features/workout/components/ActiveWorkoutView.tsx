@@ -1,4 +1,5 @@
 'use client';
+import {hasWorkoutSetActual,isWorkoutSetIncomplete} from '../contracts/workout.contract';
 
 import React, { useState, useCallback, useTransition } from 'react';
 import Link from 'next/link';
@@ -126,6 +127,7 @@ export function ActiveWorkoutView({ initialRun, initialSets }: ActiveWorkoutView
     data: {
       actualReps: number | null;
       actualLoad: number | null;
+      actualDurationSeconds?: number | null;
       status: 'completed' | 'skipped' | 'pending';
     }
   ) => {
@@ -136,6 +138,7 @@ export function ActiveWorkoutView({ initialRun, initialSets }: ActiveWorkoutView
           ? {
               ...s,
               actual_reps: data.actualReps,
+              actual_duration_seconds: data.actualDurationSeconds ?? null,
               actual_load: data.actualLoad,
               status: data.status,
               completed_at: data.status === 'completed' ? new Date().toISOString() : null,
@@ -176,7 +179,7 @@ export function ActiveWorkoutView({ initialRun, initialSets }: ActiveWorkoutView
       targetUnit: targetSet.target_unit,
       actualReps: data.actualReps,
       actualLoad: data.actualLoad,
-      actualDurationSeconds: null,
+      actualDurationSeconds: data.actualDurationSeconds ?? null,
       actualUnit: targetSet.target_unit || 'reps',
       actualAssistance: targetSet.target_assistance,
       status: data.status,
@@ -208,10 +211,12 @@ export function ActiveWorkoutView({ initialRun, initialSets }: ActiveWorkoutView
       return currentSets.map((s) => {
         if (s.exercise_index !== exIndex) return s;
         const matchingPrev = prevSets.find((p) => p.set_order === s.set_order);
-        if (matchingPrev && matchingPrev.actual_reps !== null) {
+        if (matchingPrev && (matchingPrev.actual_unit === 'seconds' ? matchingPrev.actual_duration_seconds !== null : matchingPrev.actual_reps !== null)) {
           return {
             ...s,
             actual_reps: matchingPrev.actual_reps,
+            actual_duration_seconds: matchingPrev.actual_duration_seconds,
+            actual_unit: matchingPrev.actual_unit,
             actual_load: matchingPrev.actual_load,
             actual_assistance: matchingPrev.actual_assistance,
           };
@@ -224,7 +229,7 @@ export function ActiveWorkoutView({ initialRun, initialSets }: ActiveWorkoutView
   // Kiểm tra khi bấm nút Hoàn thành
   const handleInitiateFinish = () => {
     const incompleteCount = sets.filter(
-      (s) => s.status === 'pending' || s.actual_reps === null
+      isWorkoutSetIncomplete
     ).length;
 
     if (incompleteCount > 0) {
@@ -296,7 +301,7 @@ export function ActiveWorkoutView({ initialRun, initialSets }: ActiveWorkoutView
   }
 
   const timeFormatted = formatWorkoutTime(elapsedSeconds);
-  const completedSetsCount = sets.filter((s) => s.status === 'completed' && s.actual_reps !== null).length;
+  const completedSetsCount = sets.filter((s) => s.status === 'completed' && hasWorkoutSetActual(s)).length;
   const totalSetsCount = sets.length;
 
   return (
@@ -506,7 +511,7 @@ export function ActiveWorkoutView({ initialRun, initialSets }: ActiveWorkoutView
       {/* Modal còn hiệp chưa nhập */}
       {showIncompleteModal && (
         <IncompleteSetsModal
-          incompleteCount={sets.filter((s) => s.status === 'pending' || s.actual_reps === null).length}
+          incompleteCount={sets.filter(isWorkoutSetIncomplete).length}
           totalCount={sets.length}
           onContinueWorkout={() => setShowIncompleteModal(false)}
           onConfirmPartial={handleConfirmPartial}

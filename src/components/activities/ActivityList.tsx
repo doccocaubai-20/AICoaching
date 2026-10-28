@@ -15,6 +15,7 @@ interface ActivityListProps {
   onOpenCreate: () => void;
   onEditActivity: (activity: ActivityEntity) => void;
   isConfigured: boolean;
+  highlightId?: string;
 }
 
 export function ActivityList({
@@ -22,6 +23,7 @@ export function ActivityList({
   onOpenCreate,
   onEditActivity,
   isConfigured,
+  highlightId,
 }: ActivityListProps) {
   const [selectedType, setSelectedType] = useState<ActivityType | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'actual' | 'planned'>('all');
@@ -176,6 +178,7 @@ export function ActivityList({
               activity={activity}
               onEdit={onEditActivity}
               isConfigured={isConfigured}
+              isHighlighted={activity.id === highlightId}
             />
           ))}
         </div>

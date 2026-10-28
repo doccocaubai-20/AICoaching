@@ -84,6 +84,13 @@ const anon: Actor = { role: 'anon' };
 beforeAll(async () => {
   db = await PGlite.create({ extensions: { pgcrypto } });
   await db.exec(SUPABASE_STUB);
+  await db.exec(`CREATE SCHEMA IF NOT EXISTS storage;
+ CREATE TABLE storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text,metadata jsonb);
+ ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+ CREATE TABLE storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+ CREATE FUNCTION storage.foldername(text) RETURNS text[] LANGUAGE sql AS $$select string_to_array($1,'/')$$;
+ GRANT USAGE ON SCHEMA storage TO anon,authenticated,service_role;
+ GRANT ALL ON storage.objects TO service_role;`);
 
   const migrationsDir = path.resolve(__dirname, '../../supabase/migrations');
   const files = fs
@@ -222,17 +229,20 @@ describe('3. Trigger DB tự động Invalidation khi sửa/xóa Hoạt Động 
       // 1. User A tạo hoạt động
       await tx.query(`
         INSERT INTO activities (id, user_id, activity_type, is_planned, start_at, duration_minutes, source, idempotency_key)
-        VALUES ($1, $2, 'calisthenics', true, '2026-10-25 08:00:00+00', 45, 'manual_entry', 'act-key-1')
+        VALUES ($1, $2, 'calisthenics', false, '2026-10-25 08:00:00+00', 45, 'manual_entry', 'act-key-1')
       `, [actId, USER_A]);
+      const run=await tx.query<any>(`insert into workout_runs(user_id,session_title,status,completed_at,idempotency_key) values($1,'Evidence','completed',now(),'act-key-1') returning id`,[USER_A]);
+      await tx.query(`insert into workout_sets(run_id,user_id,exercise_index,exercise_name,exercise_variant,set_order,target_reps,actual_duration_seconds,actual_unit,actual_assistance,status,idempotency_key) values($1,$2,0,'dead_hang','active_grip',1,'30s',35,'seconds','bodyweight','completed','set-act-key-1')`,[run.rows[0].id,USER_A]);
+
 
       // 2. User A ghi nhận lần thử liên kết với hoạt động trên
       await tx.query(`
         INSERT INTO journey_attempts (
           id, user_id, journey_id, milestone_id, exercise_id, variant_id, actual_duration_seconds,
-          is_achieved_self_reported, status, source_ref
+          is_achieved_self_reported, status, source_ref, assistance
         ) VALUES (
-          $1, $2, 'pull_up_mastery', 'dead_hang_30s', 'dead_hang', 'standard', 35,
-          true, 'self_reported_achieved', $3::jsonb
+          $1, $2, 'pull_up_mastery', 'dead_hang_30s', 'dead_hang', 'active_grip', 35,
+          true, 'self_reported_achieved', $3::jsonb, 'bodyweight'
         )
       `, [attId, USER_A, JSON.stringify({ sourceType: 'activity', sourceId: actId, recordedAt: '2026-10-25T08:00:00Z' })]);
 
@@ -266,17 +276,20 @@ describe('3. Trigger DB tự động Invalidation khi sửa/xóa Hoạt Động 
       // 1. User A tạo hoạt động
       await tx.query(`
         INSERT INTO activities (id, user_id, activity_type, is_planned, start_at, duration_minutes, source, idempotency_key)
-        VALUES ($1, $2, 'calisthenics', true, '2026-10-26 09:00:00+00', 30, 'manual_entry', 'act-key-2')
+        VALUES ($1, $2, 'calisthenics', false, '2026-10-26 09:00:00+00', 30, 'manual_entry', 'act-key-2')
       `, [actId, USER_A]);
+      const run=await tx.query<any>(`insert into workout_runs(user_id,session_title,status,completed_at,idempotency_key) values($1,'Evidence','completed',now(),'act-key-2') returning id`,[USER_A]);
+      await tx.query(`insert into workout_sets(run_id,user_id,exercise_index,exercise_name,exercise_variant,set_order,target_reps,actual_reps,actual_assistance,status,idempotency_key) values($1,$2,0,'inverted_row','horizontal_bar',1,'8',8,'bodyweight','completed','set-act-key-2')`,[run.rows[0].id,USER_A]);
+
 
       // 2. User A ghi nhận lần thử
       await tx.query(`
         INSERT INTO journey_attempts (
           id, user_id, journey_id, milestone_id, exercise_id, variant_id, actual_reps,
-          is_achieved_self_reported, status, source_ref
+          is_achieved_self_reported, status, source_ref, assistance
         ) VALUES (
-          $1, $2, 'pull_up_mastery', 'inverted_row_8', 'inverted_row', 'standard', 10,
-          true, 'self_reported_achieved', $3::jsonb
+          $1, $2, 'pull_up_mastery', 'inverted_row_8', 'inverted_row', 'horizontal_bar', 10,
+          true, 'self_reported_achieved', $3::jsonb, 'bodyweight'
         )
       `, [attId, USER_A, JSON.stringify({ sourceType: 'activity', sourceId: actId, recordedAt: '2026-10-26T09:00:00Z' })]);
 
@@ -314,7 +327,7 @@ describe('4. RLS & Bảo mật cô lập dữ liệu (D4, D6)', () => {
           id, user_id, journey_id, milestone_id, exercise_id, variant_id, actual_reps,
           is_achieved_self_reported, status, notes
         ) VALUES (
-          $1, $2, 'pull_up_mastery', 'negative_pull_up_5', 'negative_pull_up', 'standard', 5,
+          $1, $2, 'pull_up_mastery', 'negative_pull_up_5', 'negative_pull_up', 'slow_eccentric', 5,
           false, 'attempted', 'Lần thử gốc của A'
         )
       `, [attId, USER_A]);
@@ -414,6 +427,7 @@ describe('5. Video Quota & RPC Reservation (D6)', () => {
         ) as video_id
       `);
       const videoId = res.rows[0].video_id;
+      await tx.exec(`SET LOCAL ROLE service_role; insert into storage.objects(bucket_id,name,metadata) values('comparison_videos','${USER_A}/clip_fin.mp4','{"size":5000000,"mimetype":"video/mp4"}'); SET LOCAL ROLE authenticated;`);
 
       // Finalize: truyền đúng 3 tham số (p_video_id, p_actual_size_bytes, p_actual_mime_type)
       const finRes = await tx.query<any>(`
@@ -441,7 +455,7 @@ describe('5. Video Quota & RPC Reservation (D6)', () => {
     await as(userB, async (tx) => {
       await expect(
         tx.query(`SELECT finalize_journey_video_upload($1::uuid, 2000000, 'video/mp4')`, [videoIdA])
-      ).rejects.toThrow(/No active valid reservation found/);
+      ).rejects.toThrow(/Video not owned by user/);
     });
   });
 });
@@ -455,20 +469,21 @@ describe('6. Tombstone Deletion & Xóa không mất Lần Thử (D6)', () => {
       // 1. Tạo video ready
       const vRes = await tx.query<any>(`
         SELECT reserve_journey_video_upload(
-          'idemp-del-v', 'pull_up', 'standard', 'clip_del.mp4', 'video/mp4', 3000000, '${USER_A}/clip_del.mp4', 20
+          'idemp-del-v', 'standard_pull_up', 'deadstop', 'clip_del.mp4', 'video/mp4', 3000000, '${USER_A}/clip_del.mp4', 20
         ) as video_id
       `);
       videoId = vRes.rows[0].video_id;
+      await tx.exec(`SET LOCAL ROLE service_role; insert into storage.objects(bucket_id,name,metadata) values('comparison_videos','${USER_A}/clip_del.mp4','{"size":3000000,"mimetype":"video/mp4"}'); SET LOCAL ROLE authenticated;`);
       await tx.query(`SELECT finalize_journey_video_upload($1::uuid, 3000000, 'video/mp4')`, [videoId]);
 
       // 2. Tạo attempt gắn video trên
       await tx.query(`
         INSERT INTO journey_attempts (
           id, user_id, journey_id, milestone_id, exercise_id, variant_id, actual_reps,
-          is_achieved_self_reported, status, video_id
+          is_achieved_self_reported, status, video_id, assistance
         ) VALUES (
-          $1, $2, 'pull_up_mastery', 'standard_pull_up_1', 'pull_up', 'standard', 5,
-          true, 'self_reported_achieved', $3
+          $1, $2, 'pull_up_mastery', 'standard_pull_up_1', 'standard_pull_up', 'deadstop', 5,
+          true, 'self_reported_achieved', $3, 'bodyweight'
         )
       `, [attemptId, USER_A, videoId]);
 
@@ -481,6 +496,7 @@ describe('6. Tombstone Deletion & Xóa không mất Lần Thử (D6)', () => {
       expect(vidCheck.rows[0].status).toBe('pending_deletion');
       expect(vidCheck.rows[0].deletion_requested_at).not.toBeNull();
 
+      await tx.exec(`SET LOCAL ROLE service_role; delete from storage.objects where name='${USER_A}/clip_del.mp4'; SET LOCAL ROLE authenticated;`);
       // 4. Confirm deleted
       await tx.query(`SELECT confirm_journey_video_deleted($1::uuid, true, null)`, [videoId]);
 
@@ -505,6 +521,7 @@ describe('6. Tombstone Deletion & Xóa không mất Lần Thử (D6)', () => {
 describe('7. Local Runnable Cleanup RPC (D6)', () => {
   it('dọn dẹp các reservation hết hạn (> 1 giờ) nhưng giữ nguyên video ready', async () => {
     await as(userA, async (tx) => {
+      await tx.exec(`SET LOCAL ROLE service_role`);
       // 1. Tạo video hết hạn giả lập bằng cách ghi lùi expires_at với storage_path có user prefix
       await tx.query(`
         INSERT INTO journey_videos (
@@ -516,13 +533,14 @@ describe('7. Local Runnable Cleanup RPC (D6)', () => {
         )
       `, [USER_A]);
 
+      await tx.exec(`SET LOCAL ROLE authenticated`);
       // 2. Chạy RPC dọn dẹp
       const cleanRes = await tx.query<any>(`SELECT cleanup_expired_journey_video_reservations() as cleaned_count`);
       expect(Number(cleanRes.rows[0].cleaned_count)).toBeGreaterThanOrEqual(1);
 
       // 3. Video hết hạn phải bị xóa khỏi bảng
-      const checkOld = await tx.query(`SELECT id FROM journey_videos WHERE id = '99000000-0000-0000-0000-000000000001'`);
-      expect(checkOld.rows.length).toBe(0);
+      const checkOld = await tx.query(`SELECT status FROM journey_videos WHERE id = '99000000-0000-0000-0000-000000000001'`);
+      expect((checkOld.rows[0] as any).status).toBe('pending_deletion');
     });
   });
 });

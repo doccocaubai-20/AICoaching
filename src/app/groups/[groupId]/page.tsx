@@ -1,4 +1,5 @@
 import React from 'react';
+import { getOwnedWorkoutDraft } from '@/lib/server/workout-followup';
 import { notFound, redirect } from 'next/navigation';
 import { getSupabaseEnvStatus } from '@/lib/supabase/env';
 import { getAuthenticatedUser } from '@/lib/server/auth-guard';
@@ -19,6 +20,7 @@ import {
 
 interface PageProps {
   params: Promise<{ groupId: string }>;
+  searchParams?:Promise<{runId?:string}>;
 }
 
 export const metadata = {
@@ -26,7 +28,7 @@ export const metadata = {
   description: 'Theo dõi cam kết tuần, lịch hẹn và động viên bạn bè trong nhóm nhỏ.',
 };
 
-export default async function GroupDetailPage({ params }: PageProps) {
+export default async function GroupDetailPage({ params, searchParams }: PageProps) {
   const { groupId } = await params;
   const envStatus = getSupabaseEnvStatus();
 
@@ -175,9 +177,13 @@ export default async function GroupDetailPage({ params }: PageProps) {
     };
   });
 
+  const {runId}=searchParams ? await searchParams : {};
+  const draft=group.status==='active' ? await getOwnedWorkoutDraft(runId) : null;
   return (
     <div className="p-4 max-w-3xl mx-auto pb-24">
       <GroupDetailManager
+        key={runId || group.id}
+        workoutDraft={draft}
         group={group}
         currentUserId={user.id}
         members={members}
