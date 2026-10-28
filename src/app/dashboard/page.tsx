@@ -1,7 +1,16 @@
 import React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { LayoutDashboard, Plus, HeartPulse, ArrowRight, Sparkles } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Plus,
+  HeartPulse,
+  ArrowRight,
+  Sparkles,
+  BotMessageSquare,
+  Zap,
+  Users,
+} from 'lucide-react';
 import { getSupabaseEnvStatus } from '@/lib/supabase/env';
 import { getAuthenticatedUser } from '@/lib/server/auth-guard';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -12,7 +21,19 @@ import { DashboardMetricsSection } from '@/components/dashboard/DashboardMetrics
 import { DashboardActivitiesSection } from '@/components/dashboard/DashboardActivitiesSection';
 import { DashboardAISummaryCard } from '@/components/dashboard/DashboardAISummaryCard';
 import { QuickCheckinWidget } from '@/components/health/QuickCheckinWidget';
-import { DEFAULT_APP_TIMEZONE, getLocalDateStartInstant, getLocalDateString, getPastLocalDateString } from '@/lib/date-utils';
+import { QuickCaptureLauncher } from '@/features/capture/components/QuickCaptureLauncher';
+import { ResumeWorkoutCard } from '@/features/workout/components/ResumeWorkoutCard';
+import { WorkoutRunEntity } from '@/features/workout/contracts/workout.contract';
+import { JourneySummaryCard } from '@/features/skills/components/JourneySummaryCard';
+import { getJourneySummary } from '@/features/skills/server/skills-actions';
+import { GroupWeekSummaryCard } from '@/components/groups/GroupWeekSummaryCard';
+import { GroupWeekSummaryExport, exportGroupWeekSummary } from '@/contracts/group.contract';
+import {
+  DEFAULT_APP_TIMEZONE,
+  getLocalDateStartInstant,
+  getLocalDateString,
+  getPastLocalDateString,
+} from '@/lib/date-utils';
 import {
   GoalEntity,
   ObservationEntity,
@@ -36,7 +57,7 @@ export default async function DashboardPage() {
           <div>
             <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <LayoutDashboard className="w-5 h-5 text-emerald-600" />
-              <span>Tổng quan luyện tập</span>
+              <span>Hôm nay</span>
             </h1>
             <p className="text-xs text-slate-500">
               Dữ liệu tự khai & tổng hợp quá trình vận động cá nhân
@@ -83,7 +104,6 @@ export default async function DashboardPage() {
   const todayDateStr = getLocalDateString(now, userTimezone);
 
   // 3. Tải song song dữ liệu từ database qua RLS
-  // Tách riêng truy vấn thống kê 7 ngày: is_planned = false, start_at trong 7 ngày gần nhất, không giới hạn số dòng.
   const [
     profileRes,
     goalsRes,
@@ -92,6 +112,7 @@ export default async function DashboardPage() {
     statsActivitiesRes,
     aiSummaryRes,
     todayCheckinRes,
+    activeWorkoutRes,
   ] = await Promise.all([
     supabase.from('profiles').select('display_name').eq('user_id', user.id).maybeSingle(),
     supabase.from('goals').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -118,6 +139,22 @@ export default async function DashboardPage() {
       .eq('user_id', user.id)
       .eq('local_date', todayDateStr)
       .maybeSingle(),
+    (async () => {
+      try {
+        let q = (supabase as any)
+          .from('workout_runs')
+          .select('*')
+          .eq('user_id', user.id);
+        if (typeof q.in === 'function') {
+          q = q.in('status', ['in_progress', 'paused']);
+        } else if (typeof q.or === 'function') {
+          q = q.or('status.eq.in_progress,status.eq.paused');
+        }
+        return await q.order('updated_at', { ascending: false }).limit(1).maybeSingle();
+      } catch {
+        return { data: null };
+      }
+    })(),
   ]);
 
   const displayName =
@@ -131,37 +168,128 @@ export default async function DashboardPage() {
   const statsActivities = (statsActivitiesRes.data as ActivityEntity[]) || [];
   const latestSummary = (aiSummaryRes.data as AISummaryEntity) || null;
   const todayCheckin = (todayCheckinRes.data as DailyCheckinEntity) || null;
+  const activeWorkout = (activeWorkoutRes?.data as unknown as WorkoutRunEntity) || null;
+
+  // Lấy tóm tắt kỹ năng (Agent C)
+  let journeySummary = null;
+  try {
+    journeySummary = await getJourneySummary(user.id);
+  } catch {
+    journeySummary = null;
+  }
+
+  // Lấy tóm tắt nhóm đồng hành (Agent D)
+  let groupSummary: GroupWeekSummaryExport | null = null;
+  try {
+    const { data: memberOf } = await (supabase as any)
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .limit(1)
+      .maybeSingle();
+
+    if (memberOf?.group_id) {
+      const { data: grp } = await (supabase as any)
+        .from('groups')
+        .select('id, name')
+        .eq('id', memberOf.group_id)
+        .maybeSingle();
+
+      if (grp) {
+        const [membersRes, commitsRes] = await Promise.all([
+          (supabase as any)
+            .from('group_members')
+            .select('id')
+            .eq('group_id', grp.id)
+            .eq('status', 'active'),
+          (supabase as any)
+            .from('weekly_commitments')
+            .select('*')
+            .eq('group_id', grp.id),
+        ]);
+
+        groupSummary = exportGroupWeekSummary(
+          { id: grp.id, name: grp.name, timezone: userTimezone },
+          commitsRes.data || [],
+          todayDateStr,
+          (membersRes.data || []).length
+        );
+      }
+    }
+  } catch {
+    groupSummary = null;
+  }
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 space-y-4 max-w-lg mx-auto">
       {/* Header trang & Chào mừng */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
             <LayoutDashboard className="w-5 h-5 text-emerald-600" />
-            <span>Tổng quan luyện tập</span>
+            <span>Hôm nay</span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Chào mừng trở lại, <span className="font-semibold text-slate-700 dark:text-slate-300">{displayName}</span>
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/capture"
+            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1 shadow-xs"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>Ghi 1 câu</span>
+          </Link>
+          <Link
+            href="/activities"
+            className="text-xs bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium px-2.5 py-1.5 rounded-lg transition flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Thủ công</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* Ưu tiên 1 (Server State): Buổi tập đang dở (Agent B - D3) */}
+      {activeWorkout && (
+        <section aria-label="Buổi tập đang diễn ra">
+          <ResumeWorkoutCard run={activeWorkout} />
+        </section>
+      )}
+
+      {/* Lối vào AI nhất quán: Nút Hỏi về dữ liệu của tôi */}
+      <div className="bg-gradient-to-r from-teal-500/10 via-emerald-500/10 to-indigo-500/10 border border-teal-500/20 dark:border-teal-500/30 rounded-2xl p-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-teal-500/20 text-teal-700 dark:text-teal-300 flex items-center justify-center">
+            <BotMessageSquare className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Trợ lý Hỏi đáp & Phân tích</p>
+            <p className="text-[11px] text-slate-500">Đặt câu hỏi có kiểm chứng nguồn và consent</p>
+          </div>
+        </div>
         <Link
-          href="/activities"
-          className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1 shadow-xs"
+          href="/ai"
+          className="text-xs bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-teal-700 dark:text-teal-300 font-semibold px-3 py-1.5 rounded-lg border border-teal-200 dark:border-teal-800 transition flex items-center gap-1 shadow-xs"
         >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Ghi hoạt động</span>
+          <span>Mở Trợ lý</span>
+          <ArrowRight className="w-3.5 h-3.5" />
         </Link>
       </div>
 
-      {/* Micro-interaction Đột Phá: Check-in Sinh Hoạt Nhanh 10 Giây */}
+      {/* Ưu tiên 2: Trình ghi nhanh một câu (Agent A - D1) */}
+      <QuickCaptureLauncher variant="banner" />
+
+      {/* Micro-interaction: Check-in Sinh Hoạt Nhanh 10 Giây */}
       <QuickCheckinWidget
         todayCheckin={todayCheckin}
         todayDateStr={todayDateStr}
         isConfigured={true}
       />
 
-      {/* Lối tắt Đột Phá: Sức Khỏe V2 & Thẻ Căn Cước Vận Động Athlete Passport */}
+      {/* Lối tắt: Sức Khỏe V2 & Thẻ Athlete Passport */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Link
           href="/health"
@@ -210,7 +338,36 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      {/* 1. Khối số liệu tổng hợp tuần (tính từ statsActivities, không giới hạn 10 dòng) */}
+      {/* Ưu tiên 3 & 4: Cam kết nhóm tuần (Agent D) & Hành trình kỹ năng có bằng chứng (Agent C) */}
+      <div className="space-y-3">
+        {groupSummary ? (
+          <GroupWeekSummaryCard summary={groupSummary} />
+        ) : (
+          <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                <Users className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Nhóm đồng hành 3–5 người</p>
+                <p className="text-[11px] text-slate-500">Giữ cam kết riêng, không áp lực bảng xếp hạng</p>
+              </div>
+            </div>
+            <Link
+              href="/groups"
+              className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5"
+            >
+              <span>Tham gia</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        )}
+
+        {/* Hành trình kỹ năng (D4 + D6) */}
+        <JourneySummaryCard summary={journeySummary} />
+      </div>
+
+      {/* 1. Khối số liệu tổng hợp tuần */}
       <DashboardStatsSection
         activities={statsActivities}
         isConfigured={true}
@@ -223,7 +380,7 @@ export default async function DashboardPage() {
         goalsError={goalsRes.error ? 'Không tải được mục tiêu, thử lại sau.' : null}
       />
 
-      {/* 3. Chỉ số tự khai (Đánh dấu rõ dữ liệu còn thiếu, KHÔNG hiển thị 0) */}
+      {/* 3. Chỉ số tự khai */}
       <DashboardMetricsSection
         observations={observations}
         metricsError={observationsRes.error ? 'Không tải được chỉ số thể chất, thử lại sau.' : null}
@@ -235,7 +392,7 @@ export default async function DashboardPage() {
         aiError={aiSummaryRes.error ? 'Không tải được tóm tắt AI, thử lại sau.' : null}
       />
 
-      {/* 5. Nhật ký hoạt động gần đây (Chỉ đọc, tối đa 10 bản ghi gần nhất) */}
+      {/* 5. Nhật ký hoạt động gần đây */}
       <DashboardActivitiesSection
         activities={recentActivities}
         activitiesError={activitiesRes.error ? 'Không tải được nhật ký hoạt động, thử lại sau.' : null}

@@ -7,24 +7,53 @@ import {
   LayoutDashboard,
   CalendarCheck2,
   Dumbbell,
-  BotMessageSquare,
+  Users,
   UserCheck,
-  HeartPulse,
   Loader2,
   type LucideIcon,
 } from 'lucide-react';
 
-const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
-  { href: '/health', label: 'Sức khỏe', icon: HeartPulse },
-  { href: '/activities', label: 'Nhật ký', icon: CalendarCheck2 },
-  { href: '/programs', label: 'Tập luyện', icon: Dumbbell },
-  { href: '/ai', label: 'Trợ lý AI', icon: BotMessageSquare },
-  { href: '/profile', label: 'Hồ sơ', icon: UserCheck },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  matches: string[];
+}
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    href: '/dashboard',
+    label: 'Hôm nay',
+    icon: LayoutDashboard,
+    matches: ['/dashboard', '/capture'],
+  },
+  {
+    href: '/programs',
+    label: 'Tập luyện',
+    icon: Dumbbell,
+    matches: ['/programs', '/workout', '/journey'],
+  },
+  {
+    href: '/activities',
+    label: 'Lịch sử',
+    icon: CalendarCheck2,
+    matches: ['/activities'],
+  },
+  {
+    href: '/groups',
+    label: 'Đồng hành',
+    icon: Users,
+    matches: ['/groups'],
+  },
+  {
+    href: '/profile',
+    label: 'Cá nhân',
+    icon: UserCheck,
+    matches: ['/profile', '/health', '/passport', '/briefs', '/ai'],
+  },
 ];
 
 // Phải nằm bên trong <Link> để useLinkStatus biết link này đang chuyển trang.
-// Đổi icon thành vòng quay ngay khi bấm, trước cả khi server trả về khung trang.
 function NavItemIcon({ icon: Icon, isActive }: { icon: LucideIcon; isActive: boolean }) {
   const { pending } = useLinkStatus();
   if (pending) {
@@ -36,14 +65,26 @@ function NavItemIcon({ icon: Icon, isActive }: { icon: LucideIcon; isActive: boo
 export function BottomNav() {
   const pathname = usePathname();
 
+  // Ẩn thanh điều hướng trên các trang công khai, chia sẻ hoặc đăng nhập/đăng ký
+  if (
+    pathname === '/' ||
+    pathname === '/login' ||
+    pathname === '/register' ||
+    pathname.startsWith('/shared/')
+  ) {
+    return null;
+  }
+
   return (
     <nav
       aria-label="Điều hướng chính"
       className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800"
     >
-      <div className="max-w-[480px] mx-auto grid grid-cols-6 h-16">
+      <div className="max-w-[480px] mx-auto grid grid-cols-5 h-16">
         {NAV_ITEMS.map((item) => {
-          const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+          const isActive = item.matches.some(
+            (pattern) => pathname === pattern || pathname.startsWith(`${pattern}/`)
+          );
 
           return (
             <Link

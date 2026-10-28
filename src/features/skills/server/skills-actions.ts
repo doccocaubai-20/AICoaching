@@ -44,7 +44,7 @@ export type SkillsDatabase = {
 export type SkillsSupabaseClient = SupabaseClient<SkillsDatabase>;
 
 async function getSkillsServerClient(): Promise<SkillsSupabaseClient | null> {
-  const client = await getSkillsServerClient();
+  const client = await createServerSupabaseClient();
   return client as unknown as SkillsSupabaseClient | null;
 }
 

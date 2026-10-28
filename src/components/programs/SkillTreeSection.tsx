@@ -240,6 +240,11 @@ export function SkillTreeSection({ sessionResults = [], fetchError }: SkillTreeS
         </div>
       </div>
 
+      {/* Thông điệp phân định XP gamification vs Bằng chứng đạt chuẩn */}
+      <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-200/90 leading-relaxed">
+        <span className="font-semibold text-amber-300">Ghi chú:</span> Điểm kinh nghiệm (XP) phản ánh mức độ tích cực luyện tập qua các buổi tập mẫu. Mở khóa theo XP không tự động xác nhận bạn đã đạt chuẩn kỹ thuật mốc kỹ năng. Để ghi nhận và đối chiếu kỹ thuật có bằng chứng thực tế, vui lòng sử dụng <a href="/journey" className="text-amber-300 underline font-semibold">Hành trình kỹ năng</a>.
+      </div>
+
       {/* 3. Nhánh Kỹ Năng Tabs */}
       <div className="grid grid-cols-3 gap-2 bg-slate-950 p-1.5 rounded-2xl border border-white/5 text-xs font-bold">
         <button

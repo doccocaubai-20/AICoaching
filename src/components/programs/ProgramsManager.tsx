@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import {
   ProgramEntity,
   SessionEntity,
@@ -14,7 +15,7 @@ import { LiveWorkoutModal } from './LiveWorkoutModal';
 import { SkillTreeSection } from './SkillTreeSection';
 import { SessionHistoryList } from './SessionHistoryList';
 import { ReviewSuggestionsSection } from '@/components/review/ReviewSuggestionsSection';
-import { AlertCircle, CalendarCheck2 } from 'lucide-react';
+import { AlertCircle, CalendarCheck2, Target, ArrowRight, Video } from 'lucide-react';
 import { recordSessionResultAction } from '@/app/programs/actions';
 
 interface ProgramsManagerProps {
@@ -92,7 +93,44 @@ export function ProgramsManager({
       {/* 1. Header chương trình & cảnh báo thử nghiệm */}
       <ProgramHeader program={program} fetchError={programError} />
 
-      {/* 2. Cây Kỹ Năng Calisthenics Nhập Vai RPG (Đột Phá) */}
+      {/* 2. Khối Hành Trình Kỹ Năng Có Bằng Chứng (D4 & D6 - Agent C) */}
+      <div className="bg-gradient-to-br from-indigo-950 via-slate-900 to-emerald-950 border border-emerald-500/30 rounded-3xl p-5 text-white shadow-xl space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400">
+              <Target className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider block">
+                Tiến Trình Thực Tế • D4 & D6
+              </span>
+              <h3 className="text-sm sm:text-base font-bold text-white">
+                Hành Trình Kỹ Năng Có Bằng Chứng
+              </h3>
+            </div>
+          </div>
+          <Link
+            href="/journey"
+            className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-xl transition flex items-center gap-1 shadow-xs"
+          >
+            <span>Mở hành trình</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+        <p className="text-xs text-slate-300 leading-relaxed">
+          Tiến trình từng bước chinh phục động tác (Dead Hang, Inverted Row, Negative Pull-up, Standard Pull-up) dựa trên lần thử thực tế và video đối chiếu với chính mình, độc lập hoàn toàn với điểm kinh nghiệm (XP).
+        </p>
+        <div className="flex items-center gap-3 pt-1 text-[11px] text-slate-400 border-t border-white/10">
+          <Link href="/journey/compare" className="text-emerald-400 hover:underline flex items-center gap-1">
+            <Video className="w-3.5 h-3.5" />
+            <span>Phòng đối chiếu video</span>
+          </Link>
+          <span>•</span>
+          <span>4 trạng thái mốc minh bạch</span>
+        </div>
+      </div>
+
+      {/* 3. Cây Kỹ Năng Calisthenics Nhập Vai RPG (Gamification) */}
       <SkillTreeSection sessionResults={sessionResults} fetchError={resultsError} />
 
       {/* 3. Danh sách các buổi tập trong chương trình mẫu */}
