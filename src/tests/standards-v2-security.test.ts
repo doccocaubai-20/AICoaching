@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS storage.objects (
   owner uuid,
   created_at timestamptz DEFAULT now()
 );
+CREATE OR REPLACE FUNCTION storage.foldername(name text) RETURNS text[] AS $$
+  SELECT string_to_array(name, '/');
+$$ LANGUAGE sql IMMUTABLE;
 GRANT USAGE ON SCHEMA storage TO anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA storage TO anon, authenticated, service_role;
 `;
