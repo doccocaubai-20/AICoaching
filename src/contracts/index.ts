@@ -18,3 +18,8 @@ export * from './blood-pressure.contract';
 export * from './daily-checkin.contract';
 export * from './medical.contract';
 export * from './health-document.contract';
+export * from './group.contract';
+export * from './database-a.types';
+export * from './database-b.types';
+export * from './database-c.types';
+export * from './database-d.types';

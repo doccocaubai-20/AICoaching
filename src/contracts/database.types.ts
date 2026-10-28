@@ -6,6 +6,11 @@
  * createAdminSupabaseClient() ở server; client chỉ có quyền đọc/xóa.
  */
 
+import type { AgentADatabaseTypes, AgentAFunctionTypes } from './database-a.types';
+import type { AgentBDatabaseTypes, AgentBFunctionTypes } from './database-b.types';
+import type { AgentCDatabaseTypes, AgentCFunctionTypes } from './database-c.types';
+import type { AgentDDatabaseTypes, AgentDFunctionTypes } from './database-d.types';
+
 export type Json =
   | string
   | number
@@ -777,7 +782,7 @@ export interface Database {
         };
         Relationships: [];
       };
-    };
+    } & AgentADatabaseTypes & AgentBDatabaseTypes & AgentCDatabaseTypes & AgentDDatabaseTypes;
     Views: {
       [_ in never]: never;
     };
@@ -802,7 +807,7 @@ export interface Database {
         Args: { p_document_id: string };
         Returns: boolean;
       };
-    };
+    } & AgentAFunctionTypes & AgentBFunctionTypes & AgentCFunctionTypes & AgentDFunctionTypes;
     Enums: {
       [_ in never]: never;
     };
